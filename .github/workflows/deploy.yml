@@ -1,0 +1,69 @@
+name: Deploy NEON REALLY COMPRESS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build NEON REALLY COMPRESS
+        run: npm run build
+
+      - name: Copy Admin Panel
+        run: |
+          if [ -f admin.html ]; then
+            cp admin.html dist/admin.html
+            echo "Admin panel copied."
+          else
+            echo "No admin.html found. Skipping."
+          fi
+
+      - name: Verify Build
+        run: |
+          test -f dist/index.html || {
+            echo "ERROR: dist/index.html not found!"
+            exit 1
+          }
+          echo "Build verification successful."
+
+      - name: Upload Website
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: Deploy Website
+        id: deployment
+        uses: actions/deploy-pages@v4
