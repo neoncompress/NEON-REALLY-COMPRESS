@@ -9,31 +9,71 @@ import {
 } from '../lib/core.js';
 
 export default async function (req, res) {
-  if (!method(req, res, ['POST'])) return;
+  if (!method(req, res, ['GET', 'POST'])) return;
 
   await handler(req, res, async () => {
     const d = await db();
     const s = await settings(d);
 
-    // Maintenance mode
     if (s.maintenance) {
       return fail(res, 503, 'Maintenance mode');
     }
 
+    const day = dateMM();
+    const limit = Number(s.dailyLimit);
+
+    // GET: Read current usage without consuming quota.
+    if (req.method === 'GET') {
+      const guestId = req.query?.guestId;
+
+      if (
+        typeof guestId !== 'string' ||
+        !/^[a-f0-9-]{36}$/i.test(guestId)
+      ) {
+        return fail(res, 400, 'Invalid guest ID');
+      }
+
+      if (!s.limitEnabled) {
+        return res.json({
+          ok: true,
+          mode: 'free',
+          unlimited: true
+        });
+      }
+
+      if (!Number.isInteger(limit) || limit < 0) {
+        return fail(res, 500, 'Invalid limit settings');
+      }
+
+      const record = await d.collection('daily_usage').findOne({
+        _id: `${day}:${guestId}`
+      });
+
+      const used = record ? Number(record.used) || 0 : 0;
+
+      return res.json({
+        ok: true,
+        mode: 'free',
+        used,
+        limit,
+        remaining: Math.max(0, limit - used)
+      });
+    }
+
+    // POST: Authorize one video compression.
     const {
       guestId,
       mode = 'free',
       sizeMB
     } = req.body || {};
 
-    // Reject unsupported modes
     if (!['free', 'points'].includes(mode)) {
       return fail(res, 400, 'Invalid access mode');
     }
 
     const user = await auth(req);
 
-    // Paid points mode
+    // Paid points mode.
     if (mode === 'points') {
       if (!user) {
         return fail(res, 401, 'Login required for points');
@@ -93,7 +133,7 @@ export default async function (req, res) {
       });
     }
 
-    // Free daily quota
+    // Free daily quota.
     if (
       typeof guestId !== 'string' ||
       !/^[a-f0-9-]{36}$/i.test(guestId)
@@ -104,21 +144,15 @@ export default async function (req, res) {
     if (!s.limitEnabled) {
       return res.json({
         ok: true,
+        mode: 'free',
         unlimited: true
       });
     }
 
-    const day = dateMM();
-    const limit = Number(s.dailyLimit);
-
-    if (
-      !Number.isInteger(limit) ||
-      limit < 0
-    ) {
+    if (!Number.isInteger(limit) || limit < 0) {
       return fail(res, 500, 'Invalid limit settings');
     }
 
-    // Use the collection already created in MongoDB Atlas.
     const coll = d.collection('daily_usage');
     const id = `${day}:${guestId}`;
 
@@ -160,6 +194,7 @@ export default async function (req, res) {
       ok: true,
       mode: 'free',
       used: result.used,
+      limit,
       remaining: Math.max(0, limit - result.used)
     });
   });
