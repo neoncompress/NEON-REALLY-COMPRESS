@@ -1157,20 +1157,28 @@ video{
   }
 
   getUnlimited.addEventListener('click', openUnlimited);
+
+  // ❌ ခလုတ်ကိုနှိပ်မှသာ GET UNLIMITED modal ပိတ်မည်။
   closeUnlimited.addEventListener('click', closeUnlimitedModal);
 
+  // Backdrop ကိုနှိပ်ခြင်းဖြင့် modal မပိတ်စေရန်
   unlimitedModal.addEventListener('click', event => {
     if (event.target === unlimitedModal) {
-      closeUnlimitedModal();
+      event.preventDefault();
+      event.stopPropagation();
     }
   });
 
+  // Escape နှိပ်ခြင်းဖြင့် modal မပိတ်စေရန်
   document.addEventListener('keydown', event => {
-    if (event.key === 'Escape' &&
-        !unlimitedModal.classList.contains('hidden')) {
-      closeUnlimitedModal();
+    if (
+      event.key === 'Escape' &&
+      !unlimitedModal.classList.contains('hidden')
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
     }
-  });
+  }, true);
 
   continueButton.addEventListener('click', () => {
     welcome.classList.add('hidden');
