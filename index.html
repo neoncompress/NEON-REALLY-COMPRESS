@@ -48,7 +48,7 @@
 <canvas id="sky" aria-hidden="true"></canvas>
 <main id="app">
 <header class="top"><div class="brand"><span class="mark">✦</span> NEON COMPRESS</div><div class="account-actions"><span class="tag">NEON REALLY COMPRESS</span></div></header>
-<section class="hero"><div class="eyebrow">NEON</div><h1><span>QUALITY</span><br>COMPRESS</h1><p>Premium video optimization · NEON REALLY COMPRESS</p></section>
+<section class="card" style="padding:15px"><div class="row"><strong>NEON ACCESS</strong><span id="quotaStatus" class="tag">Loading...</span></div><p class="sub" style="margin:9px 0">Free access without login. Paid points require an account.</p><details><summary style="cursor:pointer">Account / Buy Points</summary><div class="account-form"><input id="neonEmail" type="email" placeholder="Email"><input id="neonPassword" type="password" placeholder="Password (10+ characters)"><div class="row"><button class="mini" id="neonRegister" type="button">Register</button><button class="mini" id="neonLogin" type="button">Login</button><button class="mini" id="neonLogout" type="button">Logout</button></div><p id="neonAccount" class="account-status"></p><div class="pay-grid"><label>Point package<select id="neonPackage"></select></label><label>Payment method<select id="neonMethod"></select></label><label>Payment transaction reference<input id="neonReference" placeholder="Transaction ID"></label><button class="btn secondary" id="neonPay" type="button">SUBMIT PAYMENT FOR REVIEW</button><p id="neonPaymentInfo" class="pay-help"></p></div><a href="/admin/" style="color:#ff9aaa">Admin dashboard</a></div></details><label style="display:block;margin-top:12px">Processing payment mode <select id="neonMode" style="background:#230c15;color:white;padding:9px;border-radius:8px"><option value="free">Free daily quota</option><option value="points">Use paid points</option></select></label></section><section class="hero"><div class="eyebrow">NEON</div><h1><span>QUALITY</span><br>COMPRESS</h1><p>Premium video optimization · NEON REALLY COMPRESS</p></section>
 
 <div class="steps" aria-label="Progress"><div class="step active"></div><div class="step"></div><div class="step"></div></div>
 <section id="uploadScreen" class="screen">
@@ -89,7 +89,8 @@ const drop=$('drop');drop.addEventListener('dragover',e=>{e.preventDefault();dro
 $('start').addEventListener('click',async()=>{
  if(!file||busy)return;
  if(!/\.mp4$/i.test(file.name)){const el=$('errorMessage');el.textContent='MAX QUALITY supports MP4 input only. Please select an MP4 video.';el.classList.remove('hidden');return;}
- // Check the server before beginning. Quota is consumed only after successful optimization.
+ // Authorize before local processing; quota/points are charged on start.
+ try{await window.neonAuthorize(file);}catch(err){const el=$('errorMessage');el.textContent=err.message;el.classList.remove('hidden');return;}
  busy=true;updateStart();
  progress=0;$('processingName').textContent=file.name;$('percentage').textContent='0%';$('ring').style.setProperty('--progress','0%');page(1);
  $('cancel').disabled=true;
@@ -154,5 +155,6 @@ if(!reduced){
 })();
 </script>
 
+<script type="module" src="/src/access.js"></script>
 </body>
 </html>
