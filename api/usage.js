@@ -268,3 +268,77 @@ export default async function (req, res) {
           );
 
           if (!updatedUsage) {
+            throw httpError(
+              429,
+              'Daily free limit reached. Try tomorrow or use points.'
+            );
+          }
+
+          used = updatedUsage.used;
+        }
+
+        const job = {
+          _id: requestId,
+          mode,
+          status: 'processing',
+          day,
+          guestId: mode === 'free' ? guestId : null,
+          userId: user?._id || null,
+          charged:
+            mode === 'points'
+              ? price
+              : unlimited
+                ? 0
+                : 1,
+          usageId,
+          unlimited,
+          refunded: false,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+
+        if (mode === 'points') {
+          job.sizeMB = mb;
+          job.remainingPoints = remainingPoints;
+        }
+
+        await txJobs.insertOne(job, { session });
+
+        return {
+          ok: true,
+          jobId: requestId,
+          mode,
+          status: 'processing',
+          charged: job.charged,
+          remainingPoints,
+          used,
+          limit:
+            mode === 'free' && !unlimited
+              ? limit
+              : undefined,
+          remaining:
+            mode === 'free' && !unlimited
+              ? Math.max(0, limit - used)
+              : undefined,
+          unlimited
+        };
+      });
+    } catch (error) {
+      if (error.statusCode) {
+        return fail(res, error.statusCode, error.message);
+      }
+
+      if (error.code === 11000) {
+        return fail(
+          res,
+          409,
+          'Duplicate request ID. Please start a new request.'
+        );
+      }
+
+      throw error;
+    }
+
+    return res.json(response);
+  });
+}
