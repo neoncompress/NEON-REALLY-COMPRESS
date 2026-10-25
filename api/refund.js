@@ -1,27 +1,26 @@
 import {
-  db,
   auth,
   handler,
   method,
-  fail
+  fail,
+  withTransaction
 } from '../lib/core.js';
+
+const validId = value =>
+  typeof value === 'string' &&
+  /^[a-f0-9-]{36}$/i.test(value);
 
 export default async function (req, res) {
   if (!method(req, res, ['POST'])) return;
 
   await handler(req, res, async () => {
-    const d = await db();
-
     const {
       jobId,
       guestId,
       outcome
     } = req.body || {};
 
-    if (
-      typeof jobId !== 'string' ||
-      !/^[a-f0-9-]{36}$/i.test(jobId)
-    ) {
+    if (!validId(jobId)) {
       return fail(res, 400, 'Invalid job ID');
     }
 
@@ -30,42 +29,153 @@ export default async function (req, res) {
     }
 
     const user = await auth(req);
-    const jobs = d.collection('compression_jobs');
 
-    const job = await jobs.findOne({ _id: jobId });
-
-    if (!job) {
-      return fail(res, 404, 'Compression job not found');
+    if (!user && !validId(guestId)) {
+      return fail(res, 400, 'Invalid guest ID');
     }
 
-    // Verify ownership.
-    if (job.userId) {
-      if (!user || String(user._id) !== String(job.userId)) {
-        return fail(res, 403, 'Not authorized for this job');
+    const result = await withTransaction(async (d, session) => {
+      const jobs = d.collection('compression_jobs');
+      const users = d.collection('users');
+      const usage = d.collection('daily_usage');
+
+      const job = await jobs.findOne(
+        { _id: jobId },
+        { session }
+      );
+
+      if (!job) {
+        return {
+          statusCode: 404,
+          body: { error: 'Compression job not found' }
+        };
       }
-    } else if (
-      !guestId ||
-      guestId !== job.guestId
-    ) {
-      return fail(res, 403, 'Guest ID does not match');
-    }
 
-    // A completed job cannot be refunded again.
-    if (job.status === 'refunded') {
-      return res.json({
-        ok: true,
-        status: 'refunded',
-        duplicate: true
-      });
-    }
+      // Verify ownership.
+      if (job.userId) {
+        if (!user || String(user._id) !== String(job.userId)) {
+          return {
+            statusCode: 403,
+            body: { error: 'Not authorized for this job' }
+          };
+        }
+      } else if (job.guestId !== guestId) {
+        return {
+          statusCode: 403,
+          body: { error: 'Guest ID does not match' }
+        };
+      }
 
-    if (job.status !== 'processing') {
-      return fail(res, 409, 'Job is no longer processing');
-    }
+      // Repeated success reports do not modify the job again.
+      if (job.status === 'completed' && outcome === 'success') {
+        return {
+          statusCode: 200,
+          body: {
+            ok: true,
+            status: 'completed',
+            refunded: false,
+            duplicate: true
+          }
+        };
+      }
 
-    // Successful compression: no refund.
-    if (outcome === 'success') {
-      const result = await jobs.updateOne(
+      // Repeated failure reports cannot issue another refund.
+      if (job.status === 'refunded' && outcome === 'failed') {
+        return {
+          statusCode: 200,
+          body: {
+            ok: true,
+            status: 'refunded',
+            refunded: true,
+            duplicate: true
+          }
+        };
+      }
+
+      if (job.status !== 'processing') {
+        return {
+          statusCode: 409,
+          body: {
+            error: 'Job is no longer processing',
+            status: job.status
+          }
+        };
+      }
+
+      if (outcome === 'success') {
+        await jobs.updateOne(
+          {
+            _id: jobId,
+            status: 'processing',
+            refunded: false
+          },
+          {
+            $set: {
+              status: 'completed',
+              updatedAt: new Date()
+            }
+          },
+          { session }
+        );
+
+        return {
+          statusCode: 200,
+          body: {
+            ok: true,
+            status: 'completed',
+            refunded: false
+          }
+        };
+      }
+
+      // Refund the amount actually recorded for this job.
+      if (job.mode === 'points') {
+        if (!job.userId) {
+          throw new Error('Points job has no user ID');
+        }
+
+        const pointsToReturn = Number(job.charged);
+
+        if (
+          !Number.isSafeInteger(pointsToReturn) ||
+          pointsToReturn < 0
+        ) {
+          throw new Error('Invalid recorded points charge');
+        }
+
+        await users.updateOne(
+          { _id: job.userId },
+          { $inc: { points: pointsToReturn } },
+          { session }
+        );
+      } else if (
+        job.mode === 'free' &&
+        !job.unlimited
+      ) {
+        if (!job.usageId) {
+          throw new Error('Free job has no usage record');
+        }
+
+        const usageRecord = await usage.findOne(
+          { _id: job.usageId },
+          { session }
+        );
+
+        if (!usageRecord || Number(usageRecord.used) < 1) {
+          throw new Error('Cannot safely restore free quota');
+        }
+
+        await usage.updateOne(
+          {
+            _id: job.usageId,
+            used: { $gt: 0 }
+          },
+          { $inc: { used: -1 } },
+          { session }
+        );
+      }
+
+      await jobs.updateOne(
         {
           _id: jobId,
           status: 'processing',
@@ -73,82 +183,26 @@ export default async function (req, res) {
         },
         {
           $set: {
-            status: 'completed',
+            status: 'refunded',
+            refunded: true,
+            refundReason: 'client_reported_failure',
             updatedAt: new Date()
           }
-        }
-      );
-
-      if (!result.modifiedCount) {
-        return fail(res, 409, 'Job status already changed');
-      }
-
-      return res.json({
-        ok: true,
-        status: 'completed',
-        refunded: false
-      });
-    }
-
-    // Claim the refund first to prevent duplicate refunds.
-    const claim = await jobs.updateOne(
-      {
-        _id: jobId,
-        status: 'processing',
-        refunded: false
-      },
-      {
-        $set: {
-          status: 'refunding',
-          updatedAt: new Date()
-        }
-      }
-    );
-
-    if (!claim.modifiedCount) {
-      return fail(res, 409, 'Refund already processed');
-    }
-
-    // Restore the exact points or free quota charged for this job.
-    if (job.mode === 'points' && job.userId) {
-      await d.collection('users').updateOne(
-        { _id: job.userId },
-        { $inc: { points: Number(job.charged) || 0 } }
-      );
-    } else if (
-      job.mode === 'free' &&
-      !job.unlimited &&
-      job.usageId
-    ) {
-      await d.collection('daily_usage').updateOne(
-        {
-          _id: job.usageId,
-          used: { $gt: 0 }
         },
-        { $inc: { used: -1 } }
+        { session }
       );
-    }
 
-    await jobs.updateOne(
-      {
-        _id: jobId,
-        status: 'refunding'
-      },
-      {
-        $set: {
+      return {
+        statusCode: 200,
+        body: {
+          ok: true,
           status: 'refunded',
           refunded: true,
-          refundReason: 'client_reported_failure',
-          updatedAt: new Date()
+          mode: job.mode
         }
-      }
-    );
-
-    return res.json({
-      ok: true,
-      status: 'refunded',
-      refunded: true,
-      mode: job.mode
+      };
     });
+
+    return res.status(result.statusCode).json(result.body);
   });
 }
