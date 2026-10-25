@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import {
   db,
   settings,
@@ -6,14 +5,11 @@ import {
   handler,
   method,
   fail,
-  dateMM
+  dateMM,
+  withTransaction
 } from '../lib/core.js';
 
-const validGuestId = value =>
-  typeof value === 'string' &&
-  /^[a-f0-9-]{36}$/i.test(value);
-
-const validRequestId = value =>
+const validId = value =>
   typeof value === 'string' &&
   /^[a-f0-9-]{36}$/i.test(value);
 
@@ -30,13 +26,12 @@ export default async function (req, res) {
 
     const day = dateMM();
     const limit = Number(s.dailyLimit);
-    const jobs = d.collection('compression_jobs');
 
-    // GET: Read current free quota.
+    // GET: Read quota without consuming it.
     if (req.method === 'GET') {
       const guestId = req.query?.guestId;
 
-      if (!validGuestId(guestId)) {
+      if (!validId(guestId)) {
         return fail(res, 400, 'Invalid guest ID');
       }
 
@@ -67,15 +62,14 @@ export default async function (req, res) {
       });
     }
 
-    // POST: Authorize one compression job.
     const {
+      requestId,
       guestId,
       mode = 'free',
-      sizeMB,
-      requestId
+      sizeMB
     } = req.body || {};
 
-    if (!validRequestId(requestId)) {
+    if (!validId(requestId)) {
       return fail(res, 400, 'Valid requestId is required');
     }
 
@@ -85,49 +79,20 @@ export default async function (req, res) {
 
     const user = await auth(req);
 
-    // A request ID can only be used by its original owner.
-    const existing = await jobs.findOne({ _id: requestId });
-
-    if (existing) {
-      const sameOwner = user
-        ? String(existing.userId || '') === String(user._id)
-        : !existing.userId && existing.guestId === guestId;
-
-      if (!sameOwner) {
-        return fail(res, 409, 'Request ID already used');
-      }
-
-      return res.json({
-        ok: true,
-        jobId: existing._id,
-        mode: existing.mode,
-        status: existing.status,
-        duplicate: true,
-        charged: existing.charged || 0,
-        remainingPoints: existing.remainingPoints,
-        unlimited: existing.unlimited
-      });
+    if (mode === 'points' && !user) {
+      return fail(res, 401, 'Login required for points');
     }
 
-    const jobBase = {
-      _id: requestId,
-      mode,
-      status: 'processing',
-      day,
-      guestId: validGuestId(guestId) ? guestId : null,
-      userId: user?._id || null,
-      refunded: false,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
+    if (mode === 'free' && !validId(guestId)) {
+      return fail(res, 400, 'Invalid guest ID');
+    }
 
-    // Points mode.
+    let price = 0;
+    let usageId = null;
+    let mb = 0;
+
     if (mode === 'points') {
-      if (!user) {
-        return fail(res, 401, 'Login required for points');
-      }
-
-      const mb = Number(sizeMB);
+      mb = Number(sizeMB);
 
       if (!Number.isFinite(mb) || mb <= 0 || mb > 500) {
         return fail(res, 400, 'Unsupported file size');
@@ -152,156 +117,196 @@ export default async function (req, res) {
         return fail(res, 400, 'Pricing unavailable');
       }
 
-      const price = tier.points;
-
-      // Reserve this request ID before charging.
-      try {
-        await jobs.insertOne({
-          ...jobBase,
-          charged: price,
-          sizeMB: mb
-        });
-      } catch (e) {
-        if (e.code === 11000) {
-          return fail(res, 409, 'Duplicate request ID');
-        }
-        throw e;
+      price = tier.points;
+    } else if (s.limitEnabled) {
+      if (!Number.isInteger(limit) || limit < 0) {
+        return fail(res, 500, 'Invalid limit settings');
       }
 
-      const result = await d.collection('users').findOneAndUpdate(
-        {
-          _id: user._id,
-          points: { $gte: price }
-        },
-        { $inc: { points: -price } },
-        { returnDocument: 'after' }
-      );
+      usageId = `${day}:${guestId}`;
+    }
 
-      if (!result) {
-        await jobs.updateOne(
-          { _id: requestId, status: 'processing' },
-          {
-            $set: {
-              status: 'rejected',
-              updatedAt: new Date()
-            }
-          }
+    const jobs = d.collection('compression_jobs');
+
+    // A previously accepted request must not charge again.
+    const existing = await jobs.findOne({ _id: requestId });
+
+    if (existing) {
+      const sameOwner = user
+        ? String(existing.userId || '') === String(user._id)
+        : !existing.userId && existing.guestId === guestId;
+
+      if (!sameOwner) {
+        return fail(res, 409, 'Request ID already used');
+      }
+
+      return res.json({
+        ok: true,
+        jobId: existing._id,
+        mode: existing.mode,
+        status: existing.status,
+        duplicate: true,
+        charged: existing.charged || 0,
+        remainingPoints: existing.remainingPoints,
+        unlimited: existing.unlimited
+      });
+    }
+
+    let response;
+
+    try {
+      response = await withTransaction(async (database, session) => {
+        const txJobs = database.collection('compression_jobs');
+        const txUsers = database.collection('users');
+        const txUsage = database.collection('daily_usage');
+
+        // Recheck inside the transaction to reduce duplicate charging.
+        const duplicate = await txJobs.findOne(
+          { _id: requestId },
+          { session }
         );
 
-        return fail(res, 402, 'Insufficient points');
+        if (duplicate) {
+          const sameOwner = user
+            ? String(duplicate.userId || '') === String(user._id)
+            : !duplicate.userId &&
+              duplicate.guestId === guestId;
+
+          if (!sameOwner) {
+            throw Object.assign(
+              new Error('Request ID already used'),
+              { statusCode: 409 }
+            );
+          }
+
+          return {
+            ok: true,
+            jobId: duplicate._id,
+            mode: duplicate.mode,
+            status: duplicate.status,
+            duplicate: true,
+            charged: duplicate.charged || 0,
+            remainingPoints: duplicate.remainingPoints,
+            unlimited: duplicate.unlimited
+          };
+        }
+
+        let remainingPoints;
+        let used;
+        let unlimited = false;
+
+        if (mode === 'points') {
+          const updatedUser = await txUsers.findOneAndUpdate(
+            {
+              _id: user._id,
+              points: { $gte: price }
+            },
+            { $inc: { points: -price } },
+            {
+              returnDocument: 'after',
+              session
+            }
+          );
+
+          if (!updatedUser) {
+            throw Object.assign(
+              new Error('Insufficient points'),
+              { statusCode: 402 }
+            );
+          }
+
+          remainingPoints = updatedUser.points;
+        } else if (!s.limitEnabled) {
+          unlimited = true;
+        } else {
+          await txUsage.updateOne(
+            { _id: usageId },
+            {
+              $setOnInsert: {
+                used: 0,
+                day,
+                guestId,
+                createdAt: new Date()
+              }
+            },
+            { upsert: true, session }
+          );
+
+          const updatedUsage = await txUsage.findOneAndUpdate(
+            {
+              _id: usageId,
+              used: { $lt: limit }
+            },
+            { $inc: { used: 1 } },
+            {
+              returnDocument: 'after',
+              session
+            }
+          );
+
+          if (!updatedUsage) {
+            throw Object.assign(
+              new Error(
+                'Daily free limit reached. Try tomorrow or use points.'
+              ),
+              { statusCode: 429 }
+            );
+          }
+
+          used = updatedUsage.used;
+        }
+
+        const job = {
+          _id: requestId,
+          mode,
+          status: 'processing',
+          day,
+          guestId: mode === 'free' ? guestId : null,
+          userId: user?._id || null,
+          charged: mode === 'points' ? price : (unlimited ? 0 : 1),
+          usageId,
+          sizeMB: mode === 'points' ? mb : undefined,
+          unlimited,
+          refunded: false,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+
+        if (remainingPoints !== undefined) {
+          job.remainingPoints = remainingPoints;
+        }
+
+        await txJobs.insertOne(job, { session });
+
+        return {
+          ok: true,
+          jobId: requestId,
+          mode,
+          status: 'processing',
+          charged: job.charged,
+          remainingPoints,
+          used,
+          limit: mode === 'free' && !unlimited ? limit : undefined,
+          remaining:
+            mode === 'free' && !unlimited
+              ? Math.max(0, limit - used)
+              : undefined,
+          unlimited
+        };
+      });
+    } catch (error) {
+      if (error.statusCode) {
+        return fail(res, error.statusCode, error.message);
       }
 
-      await jobs.updateOne(
-        { _id: requestId },
-        {
-          $set: {
-            remainingPoints: result.points,
-            updatedAt: new Date()
-          }
-        }
-      );
-
-      return res.json({
-        ok: true,
-        jobId: requestId,
-        mode: 'points',
-        status: 'processing',
-        charged: price,
-        remainingPoints: result.points
-      });
-    }
-
-    // Free mode requires a guest ID.
-    if (!validGuestId(guestId)) {
-      return fail(res, 400, 'Invalid guest ID');
-    }
-
-    // Unlimited mode still receives a job ID, but has no quota to refund.
-    if (!s.limitEnabled) {
-      await jobs.insertOne({
-        ...jobBase,
-        unlimited: true,
-        charged: 0
-      });
-
-      return res.json({
-        ok: true,
-        jobId: requestId,
-        mode: 'free',
-        status: 'processing',
-        unlimited: true
-      });
-    }
-
-    if (!Number.isInteger(limit) || limit < 0) {
-      return fail(res, 500, 'Invalid limit settings');
-    }
-
-    const usage = d.collection('daily_usage');
-    const usageId = `${day}:${guestId}`;
-
-    await usage.updateOne(
-      { _id: usageId },
-      {
-        $setOnInsert: {
-          used: 0,
-          day,
-          guestId,
-          createdAt: new Date()
-        }
-      },
-      { upsert: true }
-    );
-
-    // Reserve job first, then charge quota.
-    try {
-      await jobs.insertOne({
-        ...jobBase,
-        charged: 1,
-        usageId
-      });
-    } catch (e) {
-      if (e.code === 11000) {
+      // A concurrent request may have created the same ID.
+      if (error.code === 11000) {
         return fail(res, 409, 'Duplicate request ID');
       }
-      throw e;
+
+      throw error;
     }
 
-    const result = await usage.findOneAndUpdate(
-      {
-        _id: usageId,
-        used: { $lt: limit }
-      },
-      { $inc: { used: 1 } },
-      { returnDocument: 'after' }
-    );
-
-    if (!result) {
-      await jobs.updateOne(
-        { _id: requestId, status: 'processing' },
-        {
-          $set: {
-            status: 'rejected',
-            updatedAt: new Date()
-          }
-        }
-      );
-
-      return fail(
-        res,
-        429,
-        'Daily free limit reached. Try tomorrow or use points.'
-      );
-    }
-
-    return res.json({
-      ok: true,
-      jobId: requestId,
-      mode: 'free',
-      status: 'processing',
-      used: result.used,
-      limit,
-      remaining: Math.max(0, limit - result.used)
-    });
+    return res.json(response);
   });
 }
