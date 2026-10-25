@@ -188,12 +188,8 @@ el('neonMethod').onchange = () => {
 window.neonAuthorize = async file => {
   const mode = el('neonMode').value;
 
-  let requestId = localStorage.getItem(pendingKey);
-
-  if (!requestId) {
-    requestId = crypto.randomUUID();
-    localStorage.setItem(pendingKey, requestId);
-  }
+  const requestId = crypto.randomUUID();
+localStorage.setItem(pendingKey, requestId);
 
   const r = await api('usage', 'POST', {
     requestId,
