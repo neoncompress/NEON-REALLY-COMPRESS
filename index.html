@@ -1339,7 +1339,9 @@ $('start').addEventListener('click', async () => {
   if (!file || busy) return;
 
   if (!/\.mp4$/i.test(file.name)) {
-    showError('MAX QUALITY supports MP4 input only. Please select an MP4 video.');
+    showError(
+      'MAX QUALITY supports MP4 input only. Please select an MP4 video.'
+    );
     return;
   }
 
@@ -1347,14 +1349,21 @@ $('start').addEventListener('click', async () => {
   busy = true;
   updateStart();
 
+  let job = null;
+  let compressionSucceeded = false;
+
   try {
-    if (typeof window.neonAuthorize !== 'function') {
+    if (
+      typeof window.neonAuthorize !== 'function' ||
+      typeof window.neonFinish !== 'function'
+    ) {
       throw new Error(
         'Access system is not ready. Please refresh the page and try again.'
       );
     }
 
-    await window.neonAuthorize(file);
+    // Authorize and obtain the job ID.
+    job = await window.neonAuthorize(file);
 
     progress = 0;
     $('processingName').textContent = file.name;
@@ -1370,21 +1379,48 @@ $('start').addEventListener('click', async () => {
       $('ring').style.setProperty('--progress', value + '%');
     });
 
-    if (outputUrl) URL.revokeObjectURL(outputUrl);
+    if (!result || !result.blob) {
+      throw new Error('Video processing returned no output.');
+    }
+
+    if (outputUrl) {
+      URL.revokeObjectURL(outputUrl);
+    }
 
     outputBlob = result.blob;
     outputName = result.name;
     outputUrl = URL.createObjectURL(outputBlob);
 
     $('completePreview').src = outputUrl;
+
+    // Tell the backend that processing succeeded.
+    await window.neonFinish(job, true);
+
+    compressionSucceeded = true;
     page(2);
 
   } catch (err) {
-    showError(
-      'Video optimization failed: ' +
-      (err instanceof Error ? err.message : String(err))
-    );
+    const message =
+      err instanceof Error ? err.message : String(err);
 
+    // Request a refund only if authorization created a job.
+    if (job?.jobId && !compressionSucceeded) {
+      try {
+        await window.neonFinish(job, false, message);
+      } catch (refundErr) {
+        console.error('Refund request failed:', refundErr);
+
+        showError(
+          'Video optimization failed: ' + message +
+          '\nRefund could not be confirmed. Please refresh and check your quota or points.'
+        );
+
+        page(0);
+        return;
+      }
+    }
+
+    showError('Video optimization failed: ' + message);
     page(0);
 
   } finally {
