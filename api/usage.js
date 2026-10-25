@@ -13,6 +13,9 @@ const validId = value =>
   typeof value === 'string' &&
   /^[a-f0-9-]{36}$/i.test(value);
 
+const httpError = (statusCode, message) =>
+  Object.assign(new Error(message), { statusCode });
+
 export default async function (req, res) {
   if (!method(req, res, ['GET', 'POST'])) return;
 
@@ -27,7 +30,7 @@ export default async function (req, res) {
     const day = dateMM();
     const limit = Number(s.dailyLimit);
 
-    // GET: Read quota without consuming it.
+    // Read quota without consuming it.
     if (req.method === 'GET') {
       const guestId = req.query?.guestId;
 
@@ -104,20 +107,19 @@ export default async function (req, res) {
           )
         : [];
 
-      const tier = pricing.find(
-        x =>
-          Number.isFinite(x.maxMB) &&
-          x.maxMB > 0 &&
-          Number.isSafeInteger(x.points) &&
-          x.points >= 0 &&
-          mb <= x.maxMB
+      const tier = pricing.find(x =>
+        Number.isFinite(Number(x.maxMB)) &&
+        Number(x.maxMB) > 0 &&
+        Number.isSafeInteger(Number(x.points)) &&
+        Number(x.points) >= 0 &&
+        mb <= Number(x.maxMB)
       );
 
       if (!tier) {
         return fail(res, 400, 'Pricing unavailable');
       }
 
-      price = tier.points;
+      price = Number(tier.points);
     } else if (s.limitEnabled) {
       if (!Number.isInteger(limit) || limit < 0) {
         return fail(res, 500, 'Invalid limit settings');
@@ -128,16 +130,33 @@ export default async function (req, res) {
 
     const jobs = d.collection('compression_jobs');
 
-    // A previously accepted request must not charge again.
+    // Check whether this request ID has already been used.
     const existing = await jobs.findOne({ _id: requestId });
 
     if (existing) {
       const sameOwner = user
         ? String(existing.userId || '') === String(user._id)
-        : !existing.userId && existing.guestId === guestId;
+        : !existing.userId &&
+          existing.guestId === guestId;
 
       if (!sameOwner) {
         return fail(res, 409, 'Request ID already used');
+      }
+
+      // Only a job still processing can be returned for reuse.
+      // Completed/refunded jobs must never be restarted with
+      // the same request ID.
+      if (existing.status !== 'processing') {
+        return fail(
+          res,
+          409,
+          `This request has already ended (${existing.status}). Start a new request.`
+        );
+      }
+
+      // Also reject attempts to reuse the ID for another mode.
+      if (existing.mode !== mode) {
+        return fail(res, 409, 'Request ID belongs to another mode');
       }
 
       return res.json({
@@ -160,7 +179,7 @@ export default async function (req, res) {
         const txUsers = database.collection('users');
         const txUsage = database.collection('daily_usage');
 
-        // Recheck inside the transaction to reduce duplicate charging.
+        // Recheck inside the transaction.
         const duplicate = await txJobs.findOne(
           { _id: requestId },
           { session }
@@ -173,9 +192,16 @@ export default async function (req, res) {
               duplicate.guestId === guestId;
 
           if (!sameOwner) {
-            throw Object.assign(
-              new Error('Request ID already used'),
-              { statusCode: 409 }
+            throw httpError(409, 'Request ID already used');
+          }
+
+          if (
+            duplicate.status !== 'processing' ||
+            duplicate.mode !== mode
+          ) {
+            throw httpError(
+              409,
+              'This request has already ended or belongs to another mode. Start a new request.'
             );
           }
 
@@ -209,10 +235,7 @@ export default async function (req, res) {
           );
 
           if (!updatedUser) {
-            throw Object.assign(
-              new Error('Insufficient points'),
-              { statusCode: 402 }
-            );
+            throw httpError(402, 'Insufficient points');
           }
 
           remainingPoints = updatedUser.points;
@@ -245,68 +268,3 @@ export default async function (req, res) {
           );
 
           if (!updatedUsage) {
-            throw Object.assign(
-              new Error(
-                'Daily free limit reached. Try tomorrow or use points.'
-              ),
-              { statusCode: 429 }
-            );
-          }
-
-          used = updatedUsage.used;
-        }
-
-        const job = {
-          _id: requestId,
-          mode,
-          status: 'processing',
-          day,
-          guestId: mode === 'free' ? guestId : null,
-          userId: user?._id || null,
-          charged: mode === 'points' ? price : (unlimited ? 0 : 1),
-          usageId,
-          sizeMB: mode === 'points' ? mb : undefined,
-          unlimited,
-          refunded: false,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        };
-
-        if (remainingPoints !== undefined) {
-          job.remainingPoints = remainingPoints;
-        }
-
-        await txJobs.insertOne(job, { session });
-
-        return {
-          ok: true,
-          jobId: requestId,
-          mode,
-          status: 'processing',
-          charged: job.charged,
-          remainingPoints,
-          used,
-          limit: mode === 'free' && !unlimited ? limit : undefined,
-          remaining:
-            mode === 'free' && !unlimited
-              ? Math.max(0, limit - used)
-              : undefined,
-          unlimited
-        };
-      });
-    } catch (error) {
-      if (error.statusCode) {
-        return fail(res, error.statusCode, error.message);
-      }
-
-      // A concurrent request may have created the same ID.
-      if (error.code === 11000) {
-        return fail(res, 409, 'Duplicate request ID');
-      }
-
-      throw error;
-    }
-
-    return res.json(response);
-  });
-}
