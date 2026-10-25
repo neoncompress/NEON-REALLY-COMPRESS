@@ -1350,7 +1350,10 @@ $('start').addEventListener('click', async () => {
   updateStart();
 
   let job = null;
-  let compressionSucceeded = false;
+
+  // Track video processing separately from backend confirmation.
+  let processingSucceeded = false;
+  let completionConfirmed = false;
 
   try {
     if (
@@ -1364,6 +1367,12 @@ $('start').addEventListener('click', async () => {
 
     // Authorize and obtain the job ID.
     job = await window.neonAuthorize(file);
+
+    if (!job || !job.jobId) {
+      throw new Error(
+        'Authorization did not return a valid compression job ID.'
+      );
+    }
 
     progress = 0;
     $('processingName').textContent = file.name;
@@ -1383,6 +1392,10 @@ $('start').addEventListener('click', async () => {
       throw new Error('Video processing returned no output.');
     }
 
+    // Processing has succeeded. Do not refund merely because
+    // the backend success-confirmation request later fails.
+    processingSucceeded = true;
+
     if (outputUrl) {
       URL.revokeObjectURL(outputUrl);
     }
@@ -1393,18 +1406,32 @@ $('start').addEventListener('click', async () => {
 
     $('completePreview').src = outputUrl;
 
-    // Tell the backend that processing succeeded.
-    await window.neonFinish(job, true);
+    // Confirm successful processing with the backend.
+    try {
+      await window.neonFinish(job, true);
+      completionConfirmed = true;
+    } catch (confirmErr) {
+      console.error(
+        'Backend success confirmation failed:',
+        confirmErr
+      );
 
-    compressionSucceeded = true;
+      showError(
+        'Video processing succeeded, but the server could not confirm the result. ' +
+        'Your output is ready. Please refresh and check your quota or points before retrying.'
+      );
+    }
+
+    // Show the result even if the confirmation request failed.
     page(2);
 
   } catch (err) {
     const message =
       err instanceof Error ? err.message : String(err);
 
-    // Request a refund only if authorization created a job.
-    if (job?.jobId && !compressionSucceeded) {
+    // Only request a refund when video processing itself failed.
+    // Never send a failed refund report after processing succeeded.
+    if (job?.jobId && !processingSucceeded) {
       try {
         await window.neonFinish(job, false, message);
       } catch (refundErr) {
@@ -1420,7 +1447,10 @@ $('start').addEventListener('click', async () => {
       }
     }
 
-    showError('Video optimization failed: ' + message);
+    showError(
+      'Video optimization failed: ' + message
+    );
+
     page(0);
 
   } finally {
