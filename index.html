@@ -1,26 +1,1609 @@
-<div class="modal-section">
-  <h3>BUY POINTS</h3>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#130609" />
+<title>NEON COMPRESS — Video Studio</title>
 
-  <div class="pay-grid">
-    <label for="neonPackage">
-      Point package
-      <select id="neonPackage"></select>
-    </label>
+<style>
+:root{
+  color-scheme:dark;
+  --red:#ff334e;
+  --text:#fff7f8;
+  --muted:#cbb6bc;
+  --border:rgba(255,255,255,.14)
+}
 
-    <label for="neonMethod">
-      Payment method
-      <select id="neonMethod"></select>
-    </label>
+*{box-sizing:border-box}
 
-    <label for="neonReference">
-      Payment transaction reference
-      <input id="neonReference" placeholder="Transaction ID">
-    </label>
+body{
+  margin:0;
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+  background:#10070a;
+  color:var(--text);
+  min-height:100vh;
+  overflow-x:hidden
+}
 
-    <button class="btn secondary" id="neonPay" type="button">
-      SUBMIT PAYMENT FOR REVIEW
+button,input,select{font:inherit}
+button{cursor:pointer}
+button:disabled{cursor:not-allowed;opacity:.48}
+
+#sky{
+  position:fixed;
+  inset:0;
+  width:100%;
+  height:100%;
+  z-index:10;
+  pointer-events:none
+}
+
+body:before{
+  content:"";
+  position:fixed;
+  inset:0;
+  background:
+    radial-gradient(ellipse at 10% 10%,#8c122b55,transparent 45%),
+    radial-gradient(ellipse at 90% 90%,#8c152055,transparent 48%),
+    linear-gradient(135deg,#18090f,#09080c 70%);
+  z-index:-2
+}
+
+main{
+  width:100%;
+  max-width:1100px;
+  margin:0 auto;
+  padding:24px clamp(10px,2vw,28px) 80px
+}
+
+.top{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:30px
+}
+
+.brand{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-size:14px;
+  font-weight:900;
+  letter-spacing:.12em
+}
+
+.mark{
+  width:37px;
+  height:37px;
+  border-radius:12px;
+  background:linear-gradient(145deg,#ff6074,#b70929);
+  display:grid;
+  place-items:center;
+  box-shadow:0 0 25px #ff24475e
+}
+
+.tag{
+  border:1px solid #ff5e7780;
+  background:#ff334e16;
+  color:#ffb1be;
+  border-radius:99px;
+  padding:7px 11px;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.12em
+}
+
+.hero{
+  text-align:center;
+  margin-bottom:25px
+}
+
+.eyebrow{
+  font-size:11px;
+  letter-spacing:.32em;
+  color:#ff9dae;
+  font-weight:800
+}
+
+.hero h1{
+  font-size:clamp(35px,9vw,55px);
+  line-height:1.02;
+  letter-spacing:-.055em;
+  margin:12px 0 14px;
+  font-weight:950
+}
+
+.hero h1 span{
+  color:#ff3b57;
+  text-shadow:0 0 45px #ff284455
+}
+
+.hero p{
+  font-size:14px;
+  color:var(--muted);
+  line-height:1.6;
+  margin:0
+}
+
+.daily-limit-bar{
+  width:100%;
+  max-width:430px;
+  min-height:44px;
+  margin:19px auto 0;
+  padding:10px 14px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  border:1px solid #ff536b70;
+  border-radius:13px;
+  background:linear-gradient(100deg,#ff334e20,#ffffff08);
+  box-shadow:0 8px 25px #0003
+}
+
+.daily-limit-title{
+  color:#ffb2bf;
+  font-size:10px;
+  letter-spacing:.13em;
+  font-weight:900;
+  white-space:nowrap
+}
+
+.daily-remaining{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  color:#cbb6bc;
+  font-size:9px;
+  font-weight:800;
+  white-space:nowrap
+}
+
+.daily-remaining #quotaStatus{
+  color:#fff;
+  font-size:13px;
+  font-weight:900;
+  letter-spacing:.02em
+}
+
+.steps{
+  display:flex;
+  gap:8px;
+  margin:26px 0 18px
+}
+
+.step{
+  flex:1;
+  height:4px;
+  border-radius:10px;
+  background:#ffffff22
+}
+
+.step.active{
+  background:linear-gradient(90deg,#ff2846,#ff9eac);
+  box-shadow:0 0 15px #ff294877
+}
+
+.card{
+  border:1px solid var(--border);
+  background:linear-gradient(140deg,rgba(255,255,255,.11),rgba(255,255,255,.035));
+  border-radius:24px;
+  padding:clamp(18px,3vw,32px);
+  box-shadow:0 18px 55px #0005;
+  backdrop-filter:blur(16px);
+  margin-bottom:15px
+}
+
+.label{
+  color:#e9c8d0;
+  font-size:11px;
+  letter-spacing:.18em;
+  font-weight:900
+}
+
+.row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px
+}
+
+.count{
+  font-size:28px;
+  font-weight:900;
+  margin:8px 0 0
+}
+
+.count small{
+  font-size:12px;
+  font-weight:500;
+  color:var(--muted)
+}
+
+.mini{
+  padding:10px 13px;
+  border-radius:12px;
+  border:1px solid #ff4c6980;
+  background:#ff3b541c;
+  color:#ffb9c3;
+  font-size:11px;
+  font-weight:900
+}
+
+#getUnlimited{
+  padding:10px 13px;
+  border-radius:12px;
+  border:1px solid #ff8596;
+  background:linear-gradient(100deg,#ef183d,#ff596c);
+  color:#fff;
+  font-size:10px;
+  font-weight:950;
+  letter-spacing:.06em;
+  white-space:nowrap;
+  box-shadow:0 0 18px #ff334e30
+}
+
+.card h2{
+  font-size:21px;
+  margin:10px 0 7px;
+  letter-spacing:-.04em
+}
+
+.sub{
+  font-size:13px;
+  color:var(--muted);
+  line-height:1.55;
+  margin:0 0 18px
+}
+
+.drop{
+  position:relative;
+  border:1.5px dashed #ff75878c;
+  border-radius:19px;
+  min-height:230px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  padding:20px;
+  background:linear-gradient(145deg,#ff355112,#ffffff06);
+  transition:.2s
+}
+
+.drop.drag{
+  background:#ff334e2b;
+  border-color:#ff879a
+}
+
+.drop input{
+  position:absolute;
+  inset:0;
+  opacity:0;
+  width:100%;
+  height:100%;
+  cursor:pointer
+}
+
+.upload-icon{
+  font-size:31px;
+  display:block;
+  margin-bottom:10px
+}
+
+.drop strong{
+  display:block;
+  font-size:15px
+}
+
+.drop small{
+  display:block;
+  color:var(--muted);
+  margin-top:8px;
+  font-size:12px
+}
+
+.badge{
+  display:inline-flex;
+  margin:16px 0 0;
+  padding:8px 12px;
+  background:#ff334e1c;
+  border:1px solid #ff6b8080;
+  border-radius:99px;
+  font-size:10px;
+  letter-spacing:.1em;
+  color:#ffbec7;
+  font-weight:900
+}
+
+.file{
+  display:none;
+  margin-top:15px;
+  border-radius:15px;
+  background:#ffffff0d;
+  padding:13px;
+  overflow:hidden
+}
+
+.file strong{
+  display:block;
+  overflow-wrap:anywhere;
+  font-size:13px
+}
+
+.file small{color:var(--muted)}
+
+video{
+  width:100%;
+  max-height:270px;
+  margin-top:12px;
+  border-radius:12px;
+  background:#080808
+}
+
+.btn{
+  border:0;
+  width:100%;
+  padding:16px 18px;
+  border-radius:15px;
+  font-size:13px;
+  font-weight:900;
+  letter-spacing:.08em;
+  margin-top:13px;
+  transition:transform .15s,filter .15s
+}
+
+.btn:active{transform:scale(.98)}
+
+.primary{
+  color:white;
+  background:linear-gradient(100deg,#ef183d,#ff596c);
+  box-shadow:0 10px 30px #ed214645
+}
+
+.secondary{
+  background:#ffffff12;
+  border:1px solid #ffffff32;
+  color:white
+}
+
+.note{
+  font-size:11px;
+  color:#bca4ac;
+  line-height:1.6;
+  text-align:center;
+  margin:15px 0
+}
+
+.center{
+  text-align:center;
+  padding:30px 5px
+}
+
+.ring{
+  width:170px;
+  height:170px;
+  border-radius:50%;
+  margin:26px auto;
+  display:grid;
+  place-items:center;
+  background:conic-gradient(var(--red) var(--progress,0%),#ffffff17 0);
+  box-shadow:0 0 65px #ff30432c;
+  position:relative;
+  isolation:isolate
+}
+
+.ring:before{
+  content:"";
+  position:absolute;
+  inset:13px;
+  border-radius:50%;
+  background:#1c0b12
+}
+
+.ring span{
+  position:relative;
+  z-index:3;
+  font-size:38px;
+  font-weight:900
+}
+
+.ring .ring-sparks{
+  position:absolute;
+  inset:-18px;
+  border-radius:50%;
+  pointer-events:none;
+  z-index:2;
+  animation:spark-orbit 3.6s linear infinite
+}
+
+.ring .ring-sparks i{
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:var(--sz,4px);
+  height:var(--sz,4px);
+  border-radius:50%;
+  background:var(--spark,#fff);
+  box-shadow:0 0 7px 2px var(--spark,#fff),0 0 16px var(--spark,#fff);
+  transform:rotate(var(--angle)) translateY(var(--radius,-96px));
+  opacity:var(--opacity,.9);
+  animation:ember-twinkle var(--twinkle,1s) ease-in-out infinite alternate;
+  animation-delay:var(--delay,0s)
+}
+
+.ring .ring-sparks:before,
+.ring .ring-sparks:after{
+  content:"";
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:10px;
+  height:10px;
+  border-radius:50%;
+  background:#fff3dd;
+  box-shadow:0 0 10px 5px #ffb04e,0 0 23px 8px #ff345e;
+  transform:translate(-50%,-50%) translateY(-96px)
+}
+
+.ring .ring-sparks:after{
+  width:6px;
+  height:6px;
+  transform:translate(-50%,-50%) rotate(180deg) translateY(-96px);
+  box-shadow:0 0 10px 4px #ff516c
+}
+
+@keyframes spark-orbit{
+  to{transform:rotate(360deg)}
+}
+
+@keyframes ember-twinkle{
+  from{opacity:.25;filter:brightness(.8);scale:.7}
+  to{opacity:1;filter:brightness(1.6);scale:1.4}
+}
+
+.status{
+  color:#ff9caf;
+  font-size:12px;
+  letter-spacing:.15em;
+  font-weight:900
+}
+
+.success{
+  font-size:55px;
+  color:#ff536c;
+  text-shadow:0 0 30px #ff345d
+}
+
+.guide{margin-top:16px}
+
+.guide ul{
+  padding-left:20px;
+  color:#e4cbd1;
+  font-size:13px;
+  line-height:2
+}
+
+.footer{
+  text-align:center;
+  margin:30px 0;
+  color:#ff8799;
+  font-size:11px;
+  letter-spacing:.14em
+}
+
+.hidden{display:none!important}
+
+.overlay{
+  position:fixed;
+  inset:0;
+  z-index:30;
+  display:grid;
+  place-items:center;
+  padding:18px;
+  background:#08040995;
+  backdrop-filter:blur(15px);
+  overflow-y:auto
+}
+
+.modal{
+  width:min(100%,560px);
+  border-radius:27px;
+  padding:30px 24px;
+  background:linear-gradient(145deg,#35111d,#140b10);
+  border:1px solid #ff7c906e;
+  box-shadow:0 25px 100px #000b,0 0 75px #ff26402b;
+  text-align:center
+}
+
+.modal .hello{
+  font-size:34px;
+  font-weight:950;
+  letter-spacing:-.04em;
+  margin:0;
+  color:#fff
+}
+
+.modal h2{
+  font-size:19px;
+  margin:8px 0 22px;
+  color:#ff93a4
+}
+
+.modal p{
+  font-size:13px;
+  color:#f0d7dd;
+  line-height:1.8
+}
+
+.modal p+p{
+  border-top:1px solid #ffffff16;
+  padding-top:12px
+}
+
+.screen{animation:appear .3s ease}
+
+@keyframes appear{
+  from{opacity:0;transform:translateY(12px)}
+  to{opacity:1;transform:translateY(0)}
+}
+
+/* GET UNLIMITED modal */
+.unlimited-modal{
+  position:relative;
+  max-height:85vh;
+  overflow-y:auto;
+  text-align:left;
+  padding:24px 20px
+}
+
+.unlimited-modal>.eyebrow,
+.unlimited-modal>.hello,
+.unlimited-modal>h2{
+  text-align:center
+}
+
+.modal-close{
+  position:sticky;
+  top:0;
+  float:right;
+  z-index:3;
+  width:36px;
+  height:36px;
+  border-radius:50%;
+  border:1px solid #ff7c906e;
+  background:#35111d;
+  color:white;
+  font-size:17px;
+  display:grid;
+  place-items:center
+}
+
+.modal-section{
+  clear:both;
+  margin-top:18px;
+  padding:16px;
+  border:1px solid #ff7c9038;
+  border-radius:17px;
+  background:#10070a75
+}
+
+.modal-section h3{
+  margin:0 0 12px;
+  color:#ff93a4;
+  font-size:13px;
+  letter-spacing:.12em
+}
+
+.account-form{
+  display:grid;
+  gap:10px;
+  margin-top:12px
+}
+
+.account-form input{
+  width:100%;
+  padding:13px 14px;
+  background:#12090e;
+  border:1px solid #ffffff44;
+  color:#fff;
+  border-radius:12px;
+  font-size:14px
+}
+
+.account-form label{
+  text-align:left;
+  color:#eed5dc;
+  font-size:12px
+}
+
+.account-form .btn{margin-top:2px}
+
+.account-status{
+  font-size:12px;
+  line-height:1.6;
+  color:#ffbec7;
+  overflow-wrap:anywhere
+}
+
+.account-email{
+  overflow-wrap:anywhere;
+  color:#ffb4c2;
+  font-size:12px
+}
+
+.account-form .row{
+  flex-wrap:wrap;
+  justify-content:flex-start
+}
+
+.account-form .row button{flex:1}
+
+.account-form button:focus-visible,
+.account-form input:focus-visible,
+.pay-grid button:focus-visible,
+.pay-grid input:focus-visible,
+.pay-grid select:focus-visible{
+  outline:2px solid #ff879a;
+  outline-offset:2px
+}
+
+.pay-grid{
+  display:grid;
+  gap:10px;
+  margin:12px 0
+}
+
+.pay-grid label{
+  font-size:12px;
+  color:#eed5dc
+}
+
+.pay-grid select,
+.pay-grid input{
+  display:block;
+  width:100%;
+  margin-top:7px;
+  padding:13px;
+  border:1px solid #ffffff44;
+  border-radius:12px;
+  background:#1b0c12;
+  color:white
+}
+
+.pay-grid input[type=file]{font-size:12px}
+.pay-grid select option{background:#1b0c12}
+
+.pay-help{
+  color:#f2c5d0;
+  font-size:12px;
+  line-height:1.65
+}
+
+.pay-requests{
+  font-size:12px;
+  line-height:1.8;
+  overflow-wrap:anywhere
+}
+
+.pay-requests>div{
+  border-bottom:1px solid #ffffff22;
+  padding:8px 0
+}
+
+.access-label{
+  display:block;
+  margin-top:12px;
+  color:#eed5dc;
+  font-size:12px
+}
+
+.access-select{
+  display:block;
+  width:100%;
+  margin-top:8px;
+  padding:12px;
+  background:#230c15;
+  color:white;
+  border:1px solid #ffffff44;
+  border-radius:10px
+}
+
+@media(max-width:500px){
+  .top{flex-wrap:wrap}
+  .brand{font-size:12px}
+  .unlimited-modal{padding:20px 14px}
+  .modal-section{padding:13px}
+}
+
+@media(prefers-reduced-motion:reduce){
+  *,*:before,*:after{
+    animation:none!important;
+    transition:none!important
+  }
+  .sky-lantern{
+    animation:none;
+    opacity:.65;
+    bottom:auto;
+    top:14%
+  }
+  .festival-lantern,.candle:before,.ring .ring-sparks,.ring .ring-sparks i{
+    animation:none
+  }
+}
+
+/* Thadingyut effects */
+.thadingyut-card{
+  text-align:center;
+  position:relative;
+  overflow:hidden;
+  border:2px solid #ffb95a!important;
+  background:
+    radial-gradient(ellipse at top,#ff344a30,transparent 72%),
+    linear-gradient(140deg,#ffffff1c,#ffffff06)
+}
+
+.thadingyut-card h2{
+  font-size:clamp(24px,6vw,34px);
+  letter-spacing:.04em;
+  color:#fff;
+  text-shadow:0 0 24px #ff516c
+}
+
+.thadingyut-card p{
+  color:#f6dce1;
+  font-size:13px;
+  line-height:1.7
+}
+
+.festival-icon{
+  color:#ff9daf;
+  font-size:24px;
+  letter-spacing:1em;
+  text-shadow:0 0 20px #ff355b
+}
+
+.lantern-sky{
+  position:fixed;
+  inset:0;
+  overflow:hidden;
+  pointer-events:none;
+  z-index:12!important
+}
+
+.sky-lantern{
+  position:absolute;
+  bottom:-95px;
+  left:var(--x);
+  width:var(--size,24px);
+  height:calc(var(--size,24px)*1.3);
+  border-radius:46% 46% 35% 35%;
+  background:radial-gradient(ellipse at 50% 80%,#fff2aa 0%,#ffba48 27%,#fa6845 72%,#bd2445 100%);
+  box-shadow:0 0 15px #ff95488c,0 0 35px #ff48364d;
+  opacity:0;
+  animation:lanternFloat var(--duration,18s) linear infinite;
+  animation-delay:var(--delay,0s);
+  transform-origin:center;
+  filter:drop-shadow(0 0 9px #ffc06a)
+}
+
+.sky-lantern:after{
+  content:"";
+  position:absolute;
+  bottom:-4px;
+  left:35%;
+  width:30%;
+  height:5px;
+  background:#ffd58b;
+  border-radius:50%;
+  box-shadow:0 0 8px #ffd28c
+}
+
+@keyframes lanternFloat{
+  0%{transform:translate3d(0,0,0) rotate(-6deg);opacity:0}
+  8%{opacity:.9}
+  48%{transform:translate3d(22px,-55vh,0) rotate(5deg)}
+  92%{opacity:.85}
+  100%{transform:translate3d(-16px,-120vh,0) rotate(-4deg);opacity:0}
+}
+
+.festival-scene{
+  height:150px;
+  position:relative;
+  overflow:hidden;
+  margin:8px auto 12px;
+  max-width:420px;
+  border-radius:18px;
+  background:radial-gradient(ellipse at bottom,#ffb54b24,transparent 75%)
+}
+
+.festival-lantern{
+  position:absolute;
+  top:18px;
+  left:var(--left);
+  font-size:var(--fs,34px);
+  filter:drop-shadow(0 0 13px #ffb25d);
+  animation:festivalSway 3.5s ease-in-out infinite alternate;
+  animation-delay:var(--delay,0s)
+}
+
+@keyframes festivalSway{
+  from{transform:translateY(7px) rotate(-8deg)}
+  to{transform:translateY(-12px) rotate(8deg)}
+}
+
+.candle-row{
+  position:absolute;
+  bottom:0;
+  left:0;
+  right:0;
+  display:flex;
+  justify-content:center;
+  align-items:flex-end;
+  gap:18px
+}
+
+.candle{
+  position:relative;
+  width:13px;
+  height:44px;
+  border-radius:3px 3px 2px 2px;
+  background:linear-gradient(90deg,#ffe6b9,#fff9e6 45%,#f9c88c);
+  box-shadow:0 0 12px #ffbf6466
+}
+
+.candle:nth-child(even){height:35px}
+
+.candle:before{
+  content:"";
+  position:absolute;
+  width:12px;
+  height:21px;
+  left:0;
+  top:-23px;
+  border-radius:70% 10% 70% 70%;
+  transform:rotate(45deg);
+  background:radial-gradient(ellipse at 60% 65%,#fff 0 18%,#ffdc61 30%,#ff8539 75%,transparent 80%);
+  filter:drop-shadow(0 0 9px #ff9a3a);
+  animation:flicker .75s ease-in-out infinite alternate
+}
+
+@keyframes flicker{
+  to{transform:rotate(38deg) scale(.86,1.14);opacity:.82}
+}
+</style>
+</head>
+
+<body>
+<div class="lantern-sky" id="lanternSky" aria-hidden="true"></div>
+<canvas id="sky" aria-hidden="true"></canvas>
+
+<main id="app">
+
+<header class="top">
+  <div class="brand">
+    <span class="mark">✦</span>
+    NEON COMPRESS
+  </div>
+
+  <div class="account-actions">
+    <button class="mini" id="getUnlimited" type="button">
+      GET UNLIMITED ✦
+    </button>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="eyebrow">NEON</div>
+  <h1><span>QUALITY</span><br>COMPRESS</h1>
+  <p>Premium video optimization · NEON REALLY COMPRESS</p>
+
+  <!-- Compact Daily Limit bar below the main title -->
+  <div class="daily-limit-bar" aria-label="Daily limit">
+    <strong class="daily-limit-title">DAILY LIMIT</strong>
+    <span class="daily-remaining">
+      FREE REMAINING
+      <b id="quotaStatus">Loading...</b>
+    </span>
+  </div>
+</section>
+
+<div class="steps" aria-label="Progress">
+  <div class="step active"></div>
+  <div class="step"></div>
+  <div class="step"></div>
+</div>
+
+<section id="uploadScreen" class="screen">
+  <div class="card">
+    <div class="label">01 / GET STARTED</div>
+    <h2>Choose your video</h2>
+    <p class="sub">Select an MP4 video to optimize without re-encoding.</p>
+
+    <div class="drop" id="drop">
+      <input id="videoInput" type="file"
+        accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm"
+        aria-label="Choose a video">
+      <div>
+        <span class="upload-icon">↑</span>
+        <strong>Tap to choose your video</strong>
+        <small>MP4, MOV or WEBM · Drag &amp; drop on desktop</small>
+      </div>
+    </div>
+
+    <div class="badge">PLEASE UPLOAD YOUR VIDEO IN 1080P</div>
+
+    <div class="file" id="fileBox">
+      <strong id="fileName"></strong>
+      <small id="fileSize"></small>
+      <video id="uploadPreview" controls playsinline></video>
+      <button class="btn secondary" id="replace" type="button">REPLACE VIDEO</button>
+    </div>
+
+    <button class="btn primary" id="start" type="button" disabled>
+      START PROCESSING →
     </button>
 
-    <p id="neonPaymentInfo" class="pay-help" aria-live="polite"></p>
+    <p class="note">
+      MAX QUALITY preserves original video and audio streams;
+      TikTok may still recompress uploads.
+    </p>
+
+    <p id="errorMessage" class="note hidden" role="alert"
+      style="color:#ff8fa2;font-weight:700"></p>
+  </div>
+</section>
+
+<section id="processingScreen" class="screen hidden">
+  <div class="card center">
+    <div class="label">02 / PROCESSING</div>
+    <h2>Optimizing your video</h2>
+    <p class="sub">Preserving original video and audio streams.</p>
+
+    <div class="ring" id="ring">
+      <div class="ring-sparks" aria-hidden="true" id="ringSparks"></div>
+      <span id="percentage">0%</span>
+    </div>
+
+    <div class="status">PROCESSING VIDEO</div>
+    <p class="sub" id="processingName"></p>
+    <p class="note">Keep this page open until processing finishes.</p>
+
+    <button class="btn secondary" id="cancel" type="button">
+      BACK TO UPLOAD
+    </button>
+  </div>
+</section>
+
+<section id="completeScreen" class="screen hidden">
+  <div class="card center">
+    <div class="success">✦</div>
+    <div class="label">03 / COMPLETE</div>
+    <h2>Processing complete!</h2>
+    <p class="sub">Your optimized MP4 is ready.</p>
+
+    <video id="completePreview" controls playsinline></video>
+
+    <button class="btn primary" id="download" type="button">
+      DOWNLOAD OPTIMIZED MP4 ↓
+    </button>
+
+    <p class="note">
+      The encoded video/audio streams were copied without re-encoding.
+    </p>
+
+    <button class="btn secondary" id="again" type="button">
+      ← OPTIMIZE ANOTHER VIDEO
+    </button>
+  </div>
+
+  <div class="card guide">
+    <div class="label">RECOMMENDED UPLOAD METHOD</div>
+    <ul>
+      <li>Upload using Microsoft Edge.</li>
+      <li>You don't need to set your video to “Only Me”.</li>
+      <li>Enable Desktop Site mode when supported.</li>
+      <li>Avoid re-editing your downloaded video.</li>
+    </ul>
+    <div class="badge">SUPPORT: #NEONCOMPRESS</div>
+  </div>
+
+  <div class="card thadingyut-card">
+    <div class="festival-icon" aria-hidden="true">✦ ✧ ✦</div>
+    <div class="label">THADINGYUT FESTIVAL</div>
+
+    <div class="festival-scene" aria-hidden="true">
+      <span class="festival-lantern" style="--left:9%;--fs:33px">🏮</span>
+      <span class="festival-lantern" style="--left:37%;--fs:41px;--delay:-1s">🏮</span>
+      <span class="festival-lantern" style="--left:76%;--fs:35px;--delay:-2s">🏮</span>
+
+      <div class="candle-row">
+        <span class="candle"></span>
+        <span class="candle"></span>
+        <span class="candle"></span>
+        <span class="candle"></span>
+        <span class="candle"></span>
+        <span class="candle"></span>
+        <span class="candle"></span>
+      </div>
+    </div>
+
+    <h2>HAPPY THADINGYUT!</h2>
+    <p>Wishing you a joyful and bright Thadingyut Festival. 🏮 🕯️ 🎆</p>
+    <div class="festival-icon" aria-hidden="true">✧ ✦ ✧</div>
+  </div>
+</section>
+
+<footer class="footer">
+  NEON COMPRESS © 2026 · BUILT FOR CREATORS
+</footer>
+</main>
+
+<!-- Welcome modal -->
+<div class="overlay" id="welcome" role="dialog"
+  aria-modal="true" aria-labelledby="welcomeTitle">
+  <div class="modal">
+    <div class="eyebrow">WELCOME TO THE EXPERIENCE</div>
+    <h1 class="hello" id="welcomeTitle">MINGALARPAR</h1>
+    <h2>Welcome to NEON COMPRESS</h2>
+
+    <p>Please check your internet connection before processing. An unstable connection may cause errors.</p>
+    <p>Original video resolution and FPS are preserved in MAX QUALITY mode.</p>
+    <p>For the best experience, use Microsoft Edge, Quetta, or Google Chrome.</p>
+
+    <button class="btn primary" id="continue" type="button">
+      CONTINUE →
+    </button>
   </div>
 </div>
+
+<!-- GET UNLIMITED modal: account + points + payment -->
+<div class="overlay hidden" id="unlimitedModal"
+  role="dialog" aria-modal="true" aria-labelledby="unlimitedTitle">
+
+  <div class="modal unlimited-modal">
+    <button class="modal-close" id="closeUnlimited"
+      type="button" aria-label="Close GET UNLIMITED dialog">✕</button>
+
+    <div class="eyebrow">NEON COMPRESS PREMIUM</div>
+    <h1 class="hello" id="unlimitedTitle">GET UNLIMITED</h1>
+    <h2>Account &amp; Points Center</h2>
+
+    <div class="modal-section">
+      <h3>ACCOUNT</h3>
+
+      <div class="account-form">
+        <label for="neonEmail">Email</label>
+        <input id="neonEmail" type="email"
+          placeholder="Email" autocomplete="email">
+
+        <label for="neonPassword">Password</label>
+        <input id="neonPassword" type="password"
+          placeholder="Password (10+ characters)"
+          autocomplete="current-password">
+
+        <div class="row">
+          <button class="mini" id="neonRegister" type="button">REGISTER</button>
+          <button class="mini" id="neonLogin" type="button">LOGIN</button>
+          <button class="mini" id="neonLogout" type="button">LOGOUT</button>
+        </div>
+
+        <p id="neonAccount" class="account-status">Not logged in</p>
+        <a href="/admin/" style="color:#ff9aaa">Admin dashboard</a>
+      </div>
+    </div>
+
+    <div class="modal-section">
+      <h3>ACCESS MODE</h3>
+      <label class="access-label" for="neonMode">
+        Choose how to process your video
+      </label>
+
+      <select id="neonMode" class="access-select">
+        <option value="free">Free daily quota</option>
+        <option value="points">Use paid points</option>
+      </select>
+    </div>
+
+    <div class="modal-section">
+      <h3>BUY POINTS</h3>
+
+      <div class="pay-grid">
+        <label for="neonPackage">
+          Point package
+          <select id="neonPackage"></select>
+        </label>
+
+        <label for="neonMethod">
+          Payment method
+          <select id="neonMethod"></select>
+        </label>
+
+        <label for="neonReference">
+          Payment transaction reference
+          <input id="neonReference" placeholder="Transaction ID">
+        </label>
+
+        <button class="btn secondary" id="neonPay" type="button">
+          SUBMIT PAYMENT FOR REVIEW
+        </button>
+
+        <p id="neonPaymentInfo" class="pay-help" aria-live="polite"></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal controls -->
+<script>
+(() => {
+  'use strict';
+
+  const getUnlimited = document.getElementById('getUnlimited');
+  const unlimitedModal = document.getElementById('unlimitedModal');
+  const closeUnlimited = document.getElementById('closeUnlimited');
+  const welcome = document.getElementById('welcome');
+  const continueButton = document.getElementById('continue');
+
+  function openUnlimited() {
+    unlimitedModal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeUnlimitedModal() {
+    unlimitedModal.classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+
+  getUnlimited.addEventListener('click', openUnlimited);
+
+  // ❌ ခလုတ်ကိုနှိပ်မှသာ GET UNLIMITED modal ပိတ်မည်။
+  closeUnlimited.addEventListener('click', closeUnlimitedModal);
+
+  // Backdrop ကိုနှိပ်ခြင်းဖြင့် modal မပိတ်စေရန်
+  unlimitedModal.addEventListener('click', event => {
+    if (event.target === unlimitedModal) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  });
+
+  // Escape နှိပ်ခြင်းဖြင့် modal မပိတ်စေရန်
+  document.addEventListener('keydown', event => {
+    if (
+      event.key === 'Escape' &&
+      !unlimitedModal.classList.contains('hidden')
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }, true);
+
+  continueButton.addEventListener('click', () => {
+    welcome.classList.add('hidden');
+    sessionStorage.setItem('neon-welcomed', '1');
+  });
+
+  if (sessionStorage.getItem('neon-welcomed') === '1') {
+    welcome.classList.add('hidden');
+  }
+})();
+</script>
+
+<!-- Video processing and Thadingyut effects -->
+<script type="module">
+import { optimizeVideo } from './src/processing.js';
+
+(() => {
+'use strict';
+
+const $ = id => document.getElementById(id);
+let file = null, url = null, timer = null, progress = 0;
+let outputUrl = null, outputBlob = null, outputName = null, busy = false;
+
+const screens = ['uploadScreen', 'processingScreen', 'completeScreen'];
+
+function updateStart() {
+  $('start').disabled = busy || !file;
+}
+
+function showError(message) {
+  const el = $('errorMessage');
+  el.textContent = message;
+  el.classList.remove('hidden');
+}
+
+/* Processing ring sparks */
+const ringSparks = $('ringSparks');
+
+for (let i = 0; i < 26; i++) {
+  const dot = document.createElement('i');
+
+  dot.style.setProperty('--angle', (i * 360 / 26) + 'deg');
+  dot.style.setProperty('--radius', (-89 - (i % 4) * 5) + 'px');
+  dot.style.setProperty('--sz', (2 + i % 4) + 'px');
+
+  dot.style.setProperty(
+    '--spark',
+    i % 3 === 0 ? '#ffffff' :
+    i % 3 === 1 ? '#ffcf87' : '#ff526b'
+  );
+
+  dot.style.setProperty('--twinkle', (0.55 + (i % 6) * 0.18) + 's');
+  dot.style.setProperty('--delay', (-i * .12) + 's');
+
+  ringSparks.appendChild(dot);
+}
+
+function page(n) {
+  screens.forEach((id, i) =>
+    $(id).classList.toggle('hidden', i !== n)
+  );
+
+  document.querySelectorAll('.step').forEach((el, i) =>
+    el.classList.toggle('active', i <= n)
+  );
+
+  window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+function setFile(f) {
+  if (!f) return;
+
+  const valid = ['video/mp4', 'video/quicktime', 'video/webm'];
+
+  if (!valid.includes(f.type) && !(/\.(mp4|mov|webm)$/i).test(f.name)) {
+    alert('Please choose an MP4, MOV or WEBM video.');
+    return;
+  }
+
+  if (url) URL.revokeObjectURL(url);
+
+  file = f;
+  url = URL.createObjectURL(f);
+
+  $('fileName').textContent = f.name;
+  $('fileSize').textContent = (f.size / 1048576).toFixed(1) + ' MB';
+  $('uploadPreview').src = url;
+  $('fileBox').style.display = 'block';
+  $('errorMessage').classList.add('hidden');
+
+  updateStart();
+}
+
+function stop() {
+  if (timer !== null) {
+    clearInterval(timer);
+    timer = null;
+  }
+}
+
+function reset() {
+  stop();
+
+  if (outputUrl) URL.revokeObjectURL(outputUrl);
+
+  outputUrl = null;
+  outputBlob = null;
+  outputName = null;
+
+  $('uploadPreview').pause();
+  $('completePreview').pause();
+
+  $('uploadPreview').removeAttribute('src');
+  $('completePreview').removeAttribute('src');
+
+  $('uploadPreview').load();
+  $('completePreview').load();
+
+  if (url) URL.revokeObjectURL(url);
+
+  url = null;
+  file = null;
+
+  $('videoInput').value = '';
+  $('fileBox').style.display = 'none';
+  $('start').disabled = true;
+
+  progress = 0;
+  page(0);
+}
+
+$('videoInput').addEventListener('change', e =>
+  setFile(e.target.files[0])
+);
+
+$('replace').addEventListener('click', () =>
+  $('videoInput').click()
+);
+
+const drop = $('drop');
+
+drop.addEventListener('dragover', e => {
+  e.preventDefault();
+  drop.classList.add('drag');
+});
+
+drop.addEventListener('dragleave', () =>
+  drop.classList.remove('drag')
+);
+
+drop.addEventListener('drop', e => {
+  e.preventDefault();
+  drop.classList.remove('drag');
+  setFile(e.dataTransfer.files[0]);
+});
+
+$('start').addEventListener('click', async () => {
+  if (!file || busy) return;
+
+  if (!/\.mp4$/i.test(file.name)) {
+    showError('MAX QUALITY supports MP4 input only. Please select an MP4 video.');
+    return;
+  }
+
+  /* Keep existing quota/points authorization */
+  try {
+    if (typeof window.neonAuthorize !== 'function') {
+      throw new Error('Access system is not ready. Please refresh the page and try again.');
+    }
+
+    await window.neonAuthorize(file);
+  } catch (err) {
+    showError(err instanceof Error ? err.message : String(err));
+    return;
+  }
+
+  busy = true;
+  updateStart();
+
+  progress = 0;
+  $('processingName').textContent = file.name;
+  $('percentage').textContent = '0%';
+  $('ring').style.setProperty('--progress', '0%');
+
+  page(1);
+  $('cancel').disabled = true;
+
+  try {
+    const result = await optimizeVideo(file, value => {
+      progress = value;
+      $('percentage').textContent = value + '%';
+      $('ring').style.setProperty('--progress', value + '%');
+    });
+
+    if (outputUrl) URL.revokeObjectURL(outputUrl);
+
+    outputBlob = result.blob;
+    outputName = result.name;
+    outputUrl = URL.createObjectURL(outputBlob);
+
+    $('completePreview').src = outputUrl;
+    page(2);
+
+  } catch (err) {
+    showError(
+      'Video optimization failed: ' +
+      (err instanceof Error ? err.message : String(err))
+    );
+
+    page(0);
+
+  } finally {
+    busy = false;
+    $('cancel').disabled = false;
+    updateStart();
+  }
+});
+
+$('download').addEventListener('click', () => {
+  if (!outputBlob || !outputName) return;
+
+  const link = document.createElement('a');
+
+  link.href = outputUrl;
+  link.download = outputName;
+
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+});
+
+$('cancel').addEventListener('click', () => {
+  if (!busy) page(0);
+});
+
+$('again').addEventListener('click', reset);
+
+window.addEventListener('beforeunload', () => {
+  stop();
+
+  if (url) URL.revokeObjectURL(url);
+  if (outputUrl) URL.revokeObjectURL(outputUrl);
+});
+
+/* Decorative Thadingyut sky lanterns */
+const lanternSky = $('lanternSky');
+
+for (let i = 0; i < 13; i++) {
+  const el = document.createElement('span');
+
+  el.className = 'sky-lantern';
+  el.style.setProperty('--x', (3 + (i * 37) % 94) + '%');
+  el.style.setProperty('--size', (15 + (i * 7) % 17) + 'px');
+  el.style.setProperty('--duration', (14 + (i * 3) % 13) + 's');
+  el.style.setProperty('--delay', (-i * 2.1) + 's');
+
+  lanternSky.appendChild(el);
+}
+
+/* Fireworks canvas */
+const canvas = $('sky');
+const ctx = canvas.getContext('2d');
+
+if (!ctx) return;
+
+let particles = [];
+let rockets = [];
+let w = 0, h = 0, last = 0;
+
+const reduced = window.matchMedia(
+  '(prefers-reduced-motion: reduce)'
+).matches;
+
+function resize() {
+  canvas.width = innerWidth * devicePixelRatio;
+  canvas.height = innerHeight * devicePixelRatio;
+
+  ctx.setTransform(
+    devicePixelRatio, 0, 0,
+    devicePixelRatio, 0, 0
+  );
+
+  w = innerWidth;
+  h = innerHeight;
+}
+
+resize();
+addEventListener('resize', resize);
+
+function burst(x, y, white = false) {
+  const amount = white ? 30 : 34;
+
+  for (let i = 0; i < amount; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = (white ? 1.2 : 1.6) +
+      Math.random() * (white ? 3.5 : 2.9);
+
+    particles.push({
+      x, y,
+      vx: Math.cos(a) * s,
+      vy: Math.sin(a) * s,
+      life: 1,
+      size: white
+        ? 1.1 + Math.random() * 2.2
+        : 1 + Math.random() * 1.7,
+      color: white
+        ? '255,255,255'
+        : Math.random() > .5
+          ? '255,64,89'
+          : '255,220,225'
+    });
+  }
+
+  if (particles.length > 360) {
+    particles.splice(0, particles.length - 360);
+  }
+}
+
+function launchHeroFireworks() {
+  const hero = document.querySelector('.hero');
+  if (!hero) return;
+
+  const r = hero.getBoundingClientRect();
+  if (r.bottom < 0 || r.top > h) return;
+
+  const positions = [.08, .18, .32, .68, .82, .92];
+
+  const x = r.left + r.width * positions[
+    Math.floor(Math.random() * positions.length)
+  ];
+
+  const targetY = Math.max(
+    35,
+    r.top + Math.random() * Math.min(110, r.height * .65)
+  );
+
+  rockets.push({
+    x,
+    y: Math.min(h - 10, r.bottom + 65),
+    targetY,
+    speed: 4.2 + Math.random() * 2,
+    trail: []
+  });
+}
+
+function draw(t) {
+  ctx.clearRect(0, 0, w, h);
+
+  if (!reduced && t - last > 320) {
+    launchHeroFireworks();
+    launchHeroFireworks();
+
+    if (Math.random() > .45) launchHeroFireworks();
+
+    last = t;
+  }
+
+  rockets = rockets.filter(r => {
+    r.trail.push({x: r.x, y: r.y});
+
+    if (r.trail.length > 12) r.trail.shift();
+
+    r.y -= r.speed;
+
+    r.trail.forEach((p, i) => {
+      ctx.beginPath();
+
+      ctx.fillStyle =
+        `rgba(255,${i % 2 ? 255 : 75},${i % 2 ? 255 : 100},${(i + 1) / r.trail.length * .75})`;
+
+      ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    if (r.y <= r.targetY) {
+      burst(r.x, r.y);
+      return false;
+    }
+
+    return true;
+  });
+
+  particles = particles.filter(p => p.life > 0);
+
+  for (const p of particles) {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += .025;
+    p.life -= .018;
+
+    ctx.beginPath();
+
+    ctx.fillStyle =
+      `rgba(${p.color},${Math.max(0, p.life)})`;
+
+    ctx.shadowBlur = 12;
+    ctx.shadowColor = `rgba(${p.color},.85)`;
+
+    ctx.arc(
+      p.x,
+      p.y,
+      Math.max(.2, p.size * p.life),
+      0,
+      Math.PI * 2
+    );
+
+    ctx.fill();
+  }
+
+  ctx.shadowBlur = 0;
+  requestAnimationFrame(draw);
+}
+
+if (!reduced) {
+  requestAnimationFrame(draw);
+
+  document.addEventListener('pointerdown', e => {
+    burst(e.clientX, e.clientY, true);
+    burst(e.clientX, e.clientY, true);
+  }, {passive:true,capture:true});
+}
+
+})();
+</script>
+
+<script type="module" src="/src/access.js"></script>
+</body>
+</html>
