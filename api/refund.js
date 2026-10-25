@@ -14,11 +14,7 @@ export default async function (req, res) {
   if (!method(req, res, ['POST'])) return;
 
   await handler(req, res, async () => {
-    const {
-      jobId,
-      guestId,
-      outcome
-    } = req.body || {};
+    const { jobId, guestId, outcome } = req.body || {};
 
     if (!validId(jobId)) {
       return fail(res, 400, 'Invalid job ID');
@@ -53,7 +49,10 @@ export default async function (req, res) {
 
       // Verify ownership.
       if (job.userId) {
-        if (!user || String(user._id) !== String(job.userId)) {
+        if (
+          !user ||
+          String(user._id) !== String(job.userId)
+        ) {
           return {
             statusCode: 403,
             body: { error: 'Not authorized for this job' }
@@ -66,8 +65,11 @@ export default async function (req, res) {
         };
       }
 
-      // Repeated success reports do not modify the job again.
-      if (job.status === 'completed' && outcome === 'success') {
+      // Idempotent repeated reports.
+      if (
+        job.status === 'completed' &&
+        outcome === 'success'
+      ) {
         return {
           statusCode: 200,
           body: {
@@ -79,8 +81,10 @@ export default async function (req, res) {
         };
       }
 
-      // Repeated failure reports cannot issue another refund.
-      if (job.status === 'refunded' && outcome === 'failed') {
+      if (
+        job.status === 'refunded' &&
+        outcome === 'failed'
+      ) {
         return {
           statusCode: 200,
           body: {
@@ -103,7 +107,7 @@ export default async function (req, res) {
       }
 
       if (outcome === 'success') {
-        await jobs.updateOne(
+        const updated = await jobs.updateOne(
           {
             _id: jobId,
             status: 'processing',
@@ -118,6 +122,12 @@ export default async function (req, res) {
           { session }
         );
 
+        if (updated.modifiedCount !== 1) {
+          throw new Error(
+            'Could not safely complete the compression job'
+          );
+        }
+
         return {
           statusCode: 200,
           body: {
@@ -128,7 +138,7 @@ export default async function (req, res) {
         };
       }
 
-      // Refund the amount actually recorded for this job.
+      // Refund the exact recorded charge.
       if (job.mode === 'points') {
         if (!job.userId) {
           throw new Error('Points job has no user ID');
@@ -143,11 +153,17 @@ export default async function (req, res) {
           throw new Error('Invalid recorded points charge');
         }
 
-        await users.updateOne(
+        const updatedUser = await users.updateOne(
           { _id: job.userId },
           { $inc: { points: pointsToReturn } },
           { session }
         );
+
+        if (updatedUser.matchedCount !== 1) {
+          throw new Error(
+            'Could not find the account to refund points'
+          );
+        }
       } else if (
         job.mode === 'free' &&
         !job.unlimited
@@ -156,16 +172,7 @@ export default async function (req, res) {
           throw new Error('Free job has no usage record');
         }
 
-        const usageRecord = await usage.findOne(
-          { _id: job.usageId },
-          { session }
-        );
-
-        if (!usageRecord || Number(usageRecord.used) < 1) {
-          throw new Error('Cannot safely restore free quota');
-        }
-
-        await usage.updateOne(
+        const updatedUsage = await usage.updateOne(
           {
             _id: job.usageId,
             used: { $gt: 0 }
@@ -173,9 +180,21 @@ export default async function (req, res) {
           { $inc: { used: -1 } },
           { session }
         );
+
+        if (updatedUsage.modifiedCount !== 1) {
+          throw new Error(
+            'Could not safely restore free quota'
+          );
+        }
+      } else if (
+        job.mode !== 'free' &&
+        job.mode !== 'points'
+      ) {
+        throw new Error('Invalid recorded job mode');
       }
 
-      await jobs.updateOne(
+      // Change status only after the refund update succeeds.
+      const updatedJob = await jobs.updateOne(
         {
           _id: jobId,
           status: 'processing',
@@ -191,6 +210,12 @@ export default async function (req, res) {
         },
         { session }
       );
+
+      if (updatedJob.modifiedCount !== 1) {
+        throw new Error(
+          'Could not safely finalize the refund'
+        );
+      }
 
       return {
         statusCode: 200,
