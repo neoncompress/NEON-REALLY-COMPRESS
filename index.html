@@ -1343,30 +1343,27 @@ $('start').addEventListener('click', async () => {
     return;
   }
 
-  /* Keep existing quota/points authorization */
-  try {
-    if (typeof window.neonAuthorize !== 'function') {
-      throw new Error('Access system is not ready. Please refresh the page and try again.');
-    }
-
-    await window.neonAuthorize(file);
-  } catch (err) {
-    showError(err instanceof Error ? err.message : String(err));
-    return;
-  }
-
+  // Lock immediately to prevent duplicate authorization requests.
   busy = true;
   updateStart();
 
-  progress = 0;
-  $('processingName').textContent = file.name;
-  $('percentage').textContent = '0%';
-  $('ring').style.setProperty('--progress', '0%');
-
-  page(1);
-  $('cancel').disabled = true;
-
   try {
+    if (typeof window.neonAuthorize !== 'function') {
+      throw new Error(
+        'Access system is not ready. Please refresh the page and try again.'
+      );
+    }
+
+    await window.neonAuthorize(file);
+
+    progress = 0;
+    $('processingName').textContent = file.name;
+    $('percentage').textContent = '0%';
+    $('ring').style.setProperty('--progress', '0%');
+
+    page(1);
+    $('cancel').disabled = true;
+
     const result = await optimizeVideo(file, value => {
       progress = value;
       $('percentage').textContent = value + '%';
