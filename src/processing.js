@@ -1,7 +1,7 @@
-// NEON COMPRESS — MAX QUALITY PRO
-// MAX QUALITY: H.264 High Profile, CRF 16.
-// TIKTOK QUALITY TEST: H.264 High Profile, CRF 17.
-// Preserves source resolution and frame rate where supported.
+// NEON COMPRESS — MAX QUALITY PRO + SHARPEN
+// MAX QUALITY: H.264 High Profile, CRF 16, slow + mild sharpening.
+// TIKTOK QUALITY TEST: H.264 High Profile, CRF 17, fast.
+// No scaling or FPS conversion is requested.
 
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { toBlobURL } from '@ffmpeg/util';
@@ -78,7 +78,6 @@ export async function optimizeVideo(
   let ffmpeg;
   let progressHandler;
   let inputWritten = false;
-  let outputWritten = false;
 
   try {
     onProgress(1);
@@ -114,11 +113,17 @@ export async function optimizeVideo(
 
     ffmpeg.on('progress', progressHandler);
 
+    // Mild sharpening without resizing the video.
+    const sharpenFilter = 'unsharp=5:5:0.35:5:5:0.0';
+
     const args = [
       '-i', inputName,
 
       '-map', '0:v:0',
       '-map', '0:a?',
+
+      // Sharpen MAX QUALITY only.
+      ...(isTikTokTest ? [] : ['-vf', sharpenFilter]),
 
       '-c:v', 'libx264',
       '-profile:v', 'high',
@@ -147,9 +152,6 @@ export async function optimizeVideo(
       );
     }
 
-    // Mark output for cleanup after successful encoding.
-    outputWritten = true;
-
     const outputData = await ffmpeg.readFile(outputNameInFs);
 
     if (!(outputData instanceof Uint8Array)) {
@@ -160,8 +162,11 @@ export async function optimizeVideo(
       throw new Error('FFmpeg produced an empty video file.');
     }
 
+    // Copy the exact bytes into a standalone ArrayBuffer.
+    const outputBytes = new Uint8Array(outputData);
+
     const outputBlob = new Blob(
-      [outputData],
+      [outputBytes],
       { type: 'video/mp4' }
     );
 
@@ -179,7 +184,7 @@ export async function optimizeVideo(
       try {
         ffmpeg.off('progress', progressHandler);
       } catch {
-        // Ignore progress-listener cleanup errors.
+        // Ignore listener cleanup errors.
       }
     }
 
@@ -187,15 +192,15 @@ export async function optimizeVideo(
       try {
         await ffmpeg.deleteFile(inputName);
       } catch {
-        // Ignore temporary-file cleanup errors.
+        // Ignore cleanup errors.
       }
     }
 
-    if (ffmpeg && outputWritten) {
+    if (ffmpeg) {
       try {
         await ffmpeg.deleteFile(outputNameInFs);
       } catch {
-        // Ignore temporary-file cleanup errors.
+        // Ignore cleanup errors.
       }
     }
   }
