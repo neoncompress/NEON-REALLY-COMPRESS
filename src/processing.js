@@ -37,7 +37,8 @@ export async function optimizeVideo(
   options = {}
 ) {
   const {
-    postingDevice = 'variant-1',
+    // Legacy PC mode is intended for uploading from a desktop browser such as Edge.
+    postingDevice = 'pc',
     signal,
     onStatus = () => {},
   } = options ?? {};
@@ -54,8 +55,8 @@ export async function optimizeVideo(
   if (file.size > 8 * 1024 ** 3) {
     throw new Error('CompressBase supports MP4 files up to 8 GiB.');
   }
-  if (!['variant-1', 'variant-2', 'variant-3'].includes(postingDevice)) {
-    throw new Error('Choose variant-1, variant-2, or variant-3.');
+  if (!['pc', 'phone', 'phone-ghost', 'variant-1', 'variant-2', 'variant-3'].includes(postingDevice)) {
+    throw new Error('Choose pc, phone, phone-ghost, or variant-1 through variant-3.');
   }
 
   signal?.throwIfAborted();
