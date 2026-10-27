@@ -2,7 +2,8 @@
 // H.264 High Profile + CRF 16
 // Preserve source resolution and frame rate.
 // MP4 output + AAC audio.
-// No forced 480x320 scaling or 15 FPS conversion.
+// Quality + FPS metadata patch is applied after local encoding.
+// TikTok can still transcode/compress uploads; no code can guarantee zero blur.
 
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { toBlobURL } from '@ffmpeg/util';
@@ -50,18 +51,34 @@ async function getFFmpeg() {
 export async function optimizeVideo(
   file,
   onProgress = () => {},
-  mode = 'max'
+  mode = 'max',
+  options = {}
 ) {
+  const {
+    postingDevice = 'variant-1',
+    signal,
+    onStatus = () => {},
+  } = options ?? {};
+
   if (!file || typeof file.arrayBuffer !== 'function') {
     throw new Error('Please select a valid video file.');
   }
 
-  if (!/\.mp4$/i.test(file.name)) {
+  if (!/\.mp4$/i.test(file.name || '')) {
     throw new Error('Please select an MP4 video.');
   }
 
-  const isTikTokTest = mode === 'tiktok';
+  if (!['variant-1', 'variant-2', 'variant-3'].includes(postingDevice)) {
+    throw new Error('Choose variant-1, variant-2, or variant-3.');
+  }
 
+  if (file.size > 8 * 1024 ** 3) {
+    throw new Error('CompressBase Method API supports MP4 files up to 8 GiB.');
+  }
+
+  signal?.throwIfAborted();
+
+  const isTikTokTest = mode === 'tiktok';
   const originalName = file.name.replace(/\.[^/.]+$/, '');
 
   const outputName = isTikTokTest
@@ -81,6 +98,7 @@ export async function optimizeVideo(
 
   try {
     onProgress(1);
+    onStatus('Loading video processor…');
 
     ffmpeg = await getFFmpeg();
 
@@ -104,7 +122,7 @@ export async function optimizeVideo(
     progressHandler = ({ progress }) => {
       if (Number.isFinite(progress)) {
         const percentage = Math.round(
-          Math.max(0, Math.min(1, progress)) * 94 + 4
+          Math.max(0, Math.min(1, progress)) * 86 + 4
         );
 
         onProgress(percentage);
@@ -145,6 +163,7 @@ export async function optimizeVideo(
       '-y', outputNameInFs,
     ];
 
+    onStatus('Encoding video locally…');
     onProgress(4);
 
     const exitCode = await ffmpeg.exec(args);
@@ -167,15 +186,40 @@ export async function optimizeVideo(
       throw new Error('The processed video is empty.');
     }
 
-    const outputBlob = new Blob(
+    const encodedBlob = new Blob(
       [outputData],
       { type: 'video/mp4' }
     );
 
+    // Apply CompressBase Quality + FPS after the H.264 encode, before return.
+    // @vite-ignore keeps Vite from trying to bundle this external browser module.
+    // CompressBase's documented API sends MP4 metadata/layout, not video/audio payload.
+    signal?.throwIfAborted();
+    onProgress(92);
+    onStatus('Applying Quality + FPS method…');
+
+    const { patchVideo } = await import(
+      /* @vite-ignore */ 'https://compressbase.com/method-api/client.mjs'
+    );
+
+    const patchedBlob = await patchVideo(encodedBlob, {
+      postingDevice,
+      signal,
+      onStatus: (message) => {
+        onStatus(message);
+        onProgress(96);
+      },
+    });
+
+    if (!(patchedBlob instanceof Blob) || patchedBlob.size === 0) {
+      throw new Error('The Quality + FPS API returned an empty video.');
+    }
+
     onProgress(100);
+    onStatus('Done. Download the MP4 and upload it to TikTok.');
 
     return {
-      blob: outputBlob,
+      blob: patchedBlob,
       name: outputName,
     };
   } catch (error) {
