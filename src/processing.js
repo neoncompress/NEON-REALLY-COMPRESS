@@ -102,13 +102,43 @@ export async function optimizeVideo(
 
     ffmpeg = await getFFmpeg();
 
-    const fileData = new Uint8Array(
-      await file.arrayBuffer().catch(() => {
+    let fileBuffer;
+    try {
+      fileBuffer = await file.arrayBuffer();
+    } catch (arrayBufferError) {
+      console.warn('File.arrayBuffer() failed; trying FileReader fallback.', arrayBufferError);
+      try {
+        fileBuffer = await new Promise((resolve, reject) => {
+          if (typeof FileReader === 'undefined') {
+            reject(new Error('FileReader is not available in this browser.'));
+            return;
+          }
+          const reader = new FileReader();
+          reader.onload = () => {
+            if (reader.result instanceof ArrayBuffer) resolve(reader.result);
+            else reject(new Error('The browser returned unreadable file data.'));
+          };
+          reader.onerror = () => reject(reader.error || new Error('FileReader could not read the video.'));
+          reader.onabort = () => reject(new Error('Reading the video was cancelled.'));
+          reader.readAsArrayBuffer(file);
+        });
+      } catch (readerError) {
+        console.error('Both browser file-reading methods failed.', {
+          arrayBufferError,
+          readerError,
+          fileSize: file.size,
+        });
+        const sizeMB = Number.isFinite(file.size) ? (file.size / 1024 / 1024).toFixed(1) : 'unknown';
         throw new Error(
-          'The browser could not read the selected video file.'
+          `Could not read this video (${sizeMB} MB). Select the file again, try a smaller MP4, or close other tabs and retry. Details: ${readerError?.message || arrayBufferError?.message || 'browser file read failed'}`
         );
-      })
-    );
+      }
+    }
+
+    if (!(fileBuffer instanceof ArrayBuffer)) {
+      throw new Error('The browser did not return video data as an ArrayBuffer.');
+    }
+    const fileData = new Uint8Array(fileBuffer);
 
     if (fileData.length === 0) {
       throw new Error('The selected video file is empty.');
