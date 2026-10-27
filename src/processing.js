@@ -98,9 +98,8 @@ export async function optimizeVideo(
 
   try {
     onProgress(1);
-    onStatus('Loading video processor…');
-
-    ffmpeg = await getFFmpeg();
+    // Read immediately: some browser file handles expire while FFmpeg/WASM loads.
+    onStatus('Reading selected video…');
 
     let fileBuffer;
     try {
@@ -145,6 +144,9 @@ export async function optimizeVideo(
     }
 
     onProgress(3);
+    onStatus('Loading video processor…');
+
+    ffmpeg = await getFFmpeg();
 
     await ffmpeg.writeFile(inputName, fileData);
     inputWritten = true;
