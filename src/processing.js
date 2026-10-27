@@ -37,8 +37,8 @@ export async function optimizeVideo(
   options = {}
 ) {
   const {
-    // Legacy PC mode is intended for uploading from a desktop browser such as Edge.
-    postingDevice = 'pc',
+    // Safer default: no ghost samples; use pc only if the target accepts it.
+    postingDevice = 'variant-1',
     signal,
     onStatus = () => {},
   } = options ?? {};
