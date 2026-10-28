@@ -872,6 +872,26 @@ video{
 @keyframes flicker{
   to{transform:rotate(38deg) scale(.86,1.14);opacity:.82}
 }
+
+/* Mobile performance improvements */
+@media(max-width:600px){
+  .card{
+    -webkit-backdrop-filter:none;
+    backdrop-filter:none;
+  }
+  .overlay{
+    -webkit-backdrop-filter:none;
+    backdrop-filter:none;
+  }
+  .sky-lantern{filter:none}
+  .ring .ring-sparks i{
+    box-shadow:0 0 4px var(--spark,#fff);
+  }
+}
+
+@media(prefers-reduced-motion:reduce){
+  #sky,.lantern-sky{display:none}
+}
 </style>
 </head>
 
@@ -1193,7 +1213,20 @@ video{
 
 <!-- Video processing and Thadingyut effects -->
 <script type="module">
-import { optimizeVideo } from './src/processing.js';
+// Load the processing engine only when the user starts processing.
+let optimizeVideoPromise = null;
+
+async function getOptimizeVideo() {
+  if (!optimizeVideoPromise) {
+    optimizeVideoPromise = import('./src/processing.js')
+      .then(module => module.optimizeVideo)
+      .catch(error => {
+        optimizeVideoPromise = null;
+        throw error;
+      });
+  }
+  return optimizeVideoPromise;
+}
 
 (() => {
 'use strict';
@@ -1382,6 +1415,8 @@ $('start').addEventListener('click', async () => {
     page(1);
     $('cancel').disabled = true;
 
+    const optimizeVideo = await getOptimizeVideo();
+
     const result = await optimizeVideo(file, value => {
       progress = value;
       $('percentage').textContent = value + '%';
@@ -1516,13 +1551,13 @@ const reduced = window.matchMedia(
 ).matches;
 
 function resize() {
-  canvas.width = innerWidth * devicePixelRatio;
-  canvas.height = innerHeight * devicePixelRatio;
+  // Cap pixel density to reduce canvas work on high-resolution phones.
+  const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
 
-  ctx.setTransform(
-    devicePixelRatio, 0, 0,
-    devicePixelRatio, 0, 0
-  );
+  canvas.width = Math.round(innerWidth * ratio);
+  canvas.height = Math.round(innerHeight * ratio);
+
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 
   w = innerWidth;
   h = innerHeight;
@@ -1587,7 +1622,16 @@ function launchHeroFireworks() {
   });
 }
 
+let animationFrameId = 0;
+let animationRunning = false;
+
 function draw(t) {
+  if (document.hidden) {
+    animationRunning = false;
+    animationFrameId = 0;
+    return;
+  }
+
   ctx.clearRect(0, 0, w, h);
 
   if (!reduced && t - last > 320) {
@@ -1652,13 +1696,33 @@ function draw(t) {
   }
 
   ctx.shadowBlur = 0;
-  requestAnimationFrame(draw);
+  animationFrameId = requestAnimationFrame(draw);
 }
 
+function startFireworks() {
+  if (reduced || document.hidden || animationRunning) return;
+  animationRunning = true;
+  animationFrameId = requestAnimationFrame(draw);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (animationFrameId) cancelAnimationFrame(animationFrameId);
+    animationFrameId = 0;
+    animationRunning = false;
+    particles = [];
+    rockets = [];
+    ctx.clearRect(0, 0, w, h);
+  } else {
+    startFireworks();
+  }
+});
+
 if (!reduced) {
-  requestAnimationFrame(draw);
+  startFireworks();
 
   document.addEventListener('pointerdown', e => {
+    if (document.hidden) return;
     burst(e.clientX, e.clientY, true);
     burst(e.clientX, e.clientY, true);
   }, {passive:true,capture:true});
