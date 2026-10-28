@@ -6,10 +6,12 @@
 // TikTok may re-encode the upload and can still change the delivered frame rate.
 
 let ffmpegPromise = null;
+let ffmpegClassWorkerURL = null;
 let compressBaseModulePromise = null;
 
-const FFMPEG_JS_URL =
-  'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm/index.js';
+const FFMPEG_PACKAGE_BASE =
+  'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm';
+const FFMPEG_JS_URL = `${FFMPEG_PACKAGE_BASE}/index.js`;
 const FFMPEG_UTIL_URL =
   'https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.2/dist/esm/index.js';
 const FFMPEG_CORE_BASE =
@@ -38,6 +40,24 @@ async function getFFmpeg(onStatus = () => {}) {
       }
 
       const ffmpeg = new FFmpeg();
+      // FFmpeg's default worker.js URL points back to the CDN, which browsers
+      // reject when this page is hosted on another origin. Fetch the worker,
+      // point its two static imports back to the CDN, then serve it as a blob.
+      const workerResponse = await fetch(`${FFMPEG_PACKAGE_BASE}/worker.js`);
+      if (!workerResponse.ok) {
+        throw new Error(`FFmpeg worker татаж чадсангүй (${workerResponse.status}).`);
+      }
+      let workerCode = await workerResponse.text();
+      workerCode = workerCode
+        .replaceAll('"./const.js"', `"${FFMPEG_PACKAGE_BASE}/const.js"`)
+        .replaceAll('"./errors.js"', `"${FFMPEG_PACKAGE_BASE}/errors.js"`);
+      if (workerCode.includes('"./const.js"') || workerCode.includes('"./errors.js"')) {
+        throw new Error('FFmpeg worker import замыг шинэчилж чадсангүй.');
+      }
+      ffmpegClassWorkerURL = URL.createObjectURL(
+        new Blob([workerCode], { type: 'text/javascript' })
+      );
+
       const coreURL = await toBlobURL(
         `${FFMPEG_CORE_BASE}/ffmpeg-core.js`,
         'text/javascript'
@@ -48,9 +68,13 @@ async function getFFmpeg(onStatus = () => {}) {
       );
 
       onStatus('FFmpeg.wasm эхлүүлж байна…');
-      await ffmpeg.load({ coreURL, wasmURL });
+      await ffmpeg.load({ classWorkerURL: ffmpegClassWorkerURL, coreURL, wasmURL });
       return ffmpeg;
     })().catch((error) => {
+      if (ffmpegClassWorkerURL) {
+        URL.revokeObjectURL(ffmpegClassWorkerURL);
+        ffmpegClassWorkerURL = null;
+      }
       ffmpegPromise = null;
       throw error;
     });
@@ -207,6 +231,10 @@ async function encode1080p60(file, onProgress, onStatus, signal) {
       try {
         ffmpeg.terminate();
       } finally {
+        if (ffmpegClassWorkerURL) {
+          URL.revokeObjectURL(ffmpegClassWorkerURL);
+          ffmpegClassWorkerURL = null;
+        }
         ffmpegPromise = null;
       }
     };
