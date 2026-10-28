@@ -1278,7 +1278,7 @@ function page(n) {
     el.classList.toggle('active', i <= n)
   );
 
-  window.scrollTo({top: 0, behavior: 'smooth'});
+  window.scrollTo({top: 0, behavior: 'auto'});
 }
 
 function setFile(f) {
@@ -1398,7 +1398,16 @@ $('start').addEventListener('click', async () => {
       );
     }
 
-    // Authorize and obtain the job ID.
+    // Show the processing screen immediately. Do not wait for the
+    // network authorization request before changing pages.
+    progress = 0;
+    $('processingName').textContent = file.name;
+    $('percentage').textContent = '0%';
+    $('ring').style.setProperty('--progress', '0%');
+    $('cancel').disabled = true;
+    page(1);
+
+    // Authorize in the background of the visible processing screen.
     job = await window.neonAuthorize(file);
 
     if (!job || !job.jobId) {
@@ -1406,14 +1415,6 @@ $('start').addEventListener('click', async () => {
         'Authorization did not return a valid compression job ID.'
       );
     }
-
-    progress = 0;
-    $('processingName').textContent = file.name;
-    $('percentage').textContent = '0%';
-    $('ring').style.setProperty('--progress', '0%');
-
-    page(1);
-    $('cancel').disabled = true;
 
     const optimizeVideo = await getOptimizeVideo();
 
