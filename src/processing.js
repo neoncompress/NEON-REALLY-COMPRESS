@@ -1,16 +1,15 @@
-// NEON COMPRESS V3 — QUALITY + FPS PROCESSOR
-// Pipeline:
-// Original MP4 → downscaleVideo() → patchVideo() → Download MP4
+// NEON COMPRESS V3
+// MAX QUALITY: patch the original MP4 without downscaleVideo.
+// TIKTOK QUALITY TEST: downscaleVideo first, then patchVideo.
 //
-// Uses CompressBase browser modules.
-// Attempts to preserve source FPS, including 60/120 FPS.
-// TikTok may still re-encode uploaded videos.
+// Important: FPS preservation depends on the external modules.
+// TikTok may also transcode the uploaded video.
 
-let compressBaseModulesPromise = null;
+let modulesPromise = null;
 
-async function getCompressBaseModules() {
-  if (!compressBaseModulesPromise) {
-    compressBaseModulesPromise = Promise.all([
+async function getModules() {
+  if (!modulesPromise) {
+    modulesPromise = Promise.all([
       import(
         /* @vite-ignore */
         'https://compressbase.com/method-api/downscale.mjs'
@@ -19,32 +18,29 @@ async function getCompressBaseModules() {
         /* @vite-ignore */
         'https://compressbase.com/method-api/client.mjs'
       )
-    ]).then(([downscaleModule, patchModule]) => ({
-      downscaleVideo: downscaleModule.downscaleVideo,
-      patchVideo: patchModule.patchVideo
-    })).catch(error => {
-      compressBaseModulesPromise = null;
-      throw error;
-    });
+    ])
+      .then(([downscaleModule, clientModule]) => {
+        if (typeof downscaleModule.downscaleVideo !== 'function') {
+          throw new Error('downscaleVideo() is unavailable.');
+        }
+
+        if (typeof clientModule.patchVideo !== 'function') {
+          throw new Error('patchVideo() is unavailable.');
+        }
+
+        return {
+          downscaleVideo: downscaleModule.downscaleVideo,
+          patchVideo: clientModule.patchVideo
+        };
+      })
+      .catch(error => {
+        modulesPromise = null;
+        throw error;
+      });
   }
 
-  return compressBaseModulesPromise;
+  return modulesPromise;
 }
-
-/**
- * NEON COMPRESS V3
- *
- * @param {File|Blob} file
- * @param {(percent:number)=>void} onProgress
- * @param {string} mode
- * @param {{
- *   postingDevice?:string,
- *   signal?:AbortSignal,
- *   onStatus?:(message:string)=>void
- * }} options
- *
- * @returns {Promise<{blob:Blob,name:string}>}
- */
 
 export async function optimizeVideo(
   file,
@@ -52,147 +48,98 @@ export async function optimizeVideo(
   mode = 'max',
   options = {}
 ) {
-
   const {
     postingDevice = 'variant-1',
     signal,
     onStatus = () => {}
   } = options ?? {};
 
-  // Validate video
-  if (
-    !file ||
-    typeof file.slice !== 'function' ||
-    typeof file.size !== 'number'
-  ) {
-    throw new Error('Please select a valid video file.');
+  if (!(file instanceof Blob) || file.size < 16) {
+    throw new Error('Invalid or empty video file.');
   }
 
-  if (file.name && !/\.mp4$/i.test(file.name)) {
+  if (!/\.mp4$/i.test(file.name || '')) {
     throw new Error('Please select an MP4 video.');
   }
 
-  if (file.size < 16) {
-    throw new Error('The selected video file is empty.');
+  if (file.size > 8 * 1024 * 1024 * 1024) {
+    throw new Error('Video exceeds the 8 GiB limit.');
   }
 
-  if (![
-    'variant-1',
-    'variant-2',
-    'variant-3'
-  ].includes(postingDevice)) {
-    throw new Error('Invalid processing variant.');
+  if (!['variant-1', 'variant-2', 'variant-3'].includes(postingDevice)) {
+    throw new Error('Invalid posting device.');
+  }
+
+  if (!['max', 'tiktok'].includes(mode)) {
+    throw new Error('Invalid processing mode.');
   }
 
   signal?.throwIfAborted();
 
-  onProgress(2);
-  onStatus('Loading Quality + FPS processor…');
+  onProgress(3);
+  onStatus('Loading video processing modules…');
 
-  try {
+  const { downscaleVideo, patchVideo } = await getModules();
 
-    const {
-      downscaleVideo,
-      patchVideo
-    } = await getCompressBaseModules();
+  signal?.throwIfAborted();
 
-    signal?.throwIfAborted();
+  let inputForPatch = file;
 
-    // STEP 1
-    // Process video frames and preserve source FPS where supported.
+  if (mode === 'tiktok') {
+    onStatus('Running TikTok quality processing…');
 
-    onStatus('Processing video quality and FPS…');
-
-    const processedMp4 = await downscaleVideo(file, {
-
+    inputForPatch = await downscaleVideo(file, {
       signal,
-
       onStatus,
-
       onProgress: fraction => {
+        const value = Number(fraction);
 
-        const safeFraction = Math.max(
-          0,
-          Math.min(1, Number(fraction) || 0)
-        );
-
-        onProgress(
-          Math.round(safeFraction * 90)
-        );
-
+        if (Number.isFinite(value)) {
+          onProgress(
+            Math.round(Math.max(0, Math.min(1, value)) * 80)
+          );
+        }
       }
-
     });
 
     signal?.throwIfAborted();
 
-    if (
-      !(processedMp4 instanceof Blob) ||
-      processedMp4.size === 0
-    ) {
-      throw new Error('Video processing returned an empty file.');
+    if (!(inputForPatch instanceof Blob) || inputForPatch.size < 16) {
+      throw new Error('Video processing returned an invalid file.');
     }
-
-    // STEP 2
-    // Apply CompressBase MP4 patch.
-
-    onProgress(92);
-    onStatus('Applying Quality + FPS MP4 patch…');
-
-    const patchedBlob = await patchVideo(processedMp4, {
-
-      postingDevice,
-
-      signal,
-
-      onStatus
-
-    });
-
-    signal?.throwIfAborted();
-
-    if (
-      !(patchedBlob instanceof Blob) ||
-      patchedBlob.size === 0
-    ) {
-      throw new Error('MP4 patch returned an empty file.');
-    }
-
-    // STEP 3
-    // Prepare final download.
-
-    const sourceName = file.name || 'video.mp4';
-
-    const originalName = sourceName.replace(/\.mp4$/i, '');
-
-    const suffix =
-      mode === 'tiktok'
-        ? '-neon-tiktok-quality-fps'
-        : '-neon-quality-fps';
-
-    onProgress(100);
-
-    onStatus(
-      'Processing complete. Download your MP4.'
-    );
-
-    return {
-
-      blob: patchedBlob,
-
-      name: `${originalName}${suffix}.mp4`
-
-    };
-
-  } catch (error) {
-
-    console.error(
-      'NEON COMPRESS V3 processing error:',
-      error
-    );
-
-    throw error;
-
+  } else {
+    onProgress(25);
+    onStatus('MAX QUALITY: preparing the original MP4 without downscaling…');
   }
 
+  signal?.throwIfAborted();
+
+  onStatus('Applying MP4 preparation…');
+
+  const outputBlob = await patchVideo(inputForPatch, {
+    postingDevice,
+    signal,
+    onStatus
+  });
+
+  signal?.throwIfAborted();
+
+  if (!(outputBlob instanceof Blob) || outputBlob.size < 16) {
+    throw new Error('MP4 preparation returned an invalid file.');
+  }
+
+  const originalName = (file.name || 'video.mp4')
+    .replace(/\.mp4$/i, '');
+
+  const suffix = mode === 'tiktok'
+    ? '-neon-tiktok-quality-fps'
+    : '-neon-quality-fps';
+
+  onProgress(100);
+  onStatus('Finished. Check the output FPS before uploading to TikTok.');
+
+  return {
+    blob: outputBlob,
+    name: `${originalName}${suffix}.mp4`
+  };
 }
