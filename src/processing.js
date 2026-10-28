@@ -1,5 +1,4 @@
-// ZILEM / NEON COMPRESS — FAST PROCESSING JS
-// Paste this whole module into the Processing JS field.
+// NEON COMPRESS — FAST PROCESSING JS
 // Fast path: no FFmpeg.wasm, no resizing, no FPS conversion, no video re-encode.
 // Applies only CompressBase's container patch to the original MP4, then removes
 // the exact CompressBase marker from the MP4 moov metadata if present.
@@ -36,9 +35,11 @@ export async function removeCompressBaseComment(file, signal) {
 
   while (offset + 8 <= file.size) {
     checkAbort(signal);
+
     const headerBytes = new Uint8Array(
       await file.slice(offset, offset + 16).arrayBuffer()
     );
+
     if (headerBytes.length < 8) break;
 
     const view = new DataView(
@@ -46,28 +47,38 @@ export async function removeCompressBaseComment(file, signal) {
       headerBytes.byteOffset,
       headerBytes.byteLength
     );
+
     let atomSize = view.getUint32(0);
+
     const atomType = String.fromCharCode(
-      headerBytes[4], headerBytes[5], headerBytes[6], headerBytes[7]
+      headerBytes[4],
+      headerBytes[5],
+      headerBytes[6],
+      headerBytes[7]
     );
+
     let headerSize = 8;
 
     if (atomSize === 1) {
       if (headerBytes.length < 16) {
         throw new Error('MP4 metadata header မပြည့်စုံပါ။');
       }
+
       const extendedSize = view.getBigUint64(8);
+
       if (extendedSize > BigInt(Number.MAX_SAFE_INTEGER)) {
         throw new Error('MP4 metadata အရွယ်အစား အလွန်ကြီးနေပါသည်။');
       }
+
       atomSize = Number(extendedSize);
       headerSize = 16;
+
     } else if (atomSize === 0) {
       atomSize = file.size - offset;
     }
 
     if (atomSize < headerSize || offset + atomSize > file.size) {
-      throw new Error('MP4 atom бүтэц буруу тул metadata-г өөрчилсөнгүй။');
+      throw new Error('MP4 atom structure is invalid. Metadata was not modified.');
     }
 
     if (atomType === 'moov') {
@@ -76,11 +87,12 @@ export async function removeCompressBaseComment(file, signal) {
       moovHeaderSize = headerSize;
       break;
     }
+
     offset += atomSize;
   }
 
   if (moovStart < 0) {
-    throw new Error('MP4 metadata (moov atom) олдсонгүй.');
+    throw new Error('MP4 metadata (moov atom) was not found.');
   }
 
   const searchStart = moovStart + moovHeaderSize;
@@ -89,37 +101,57 @@ export async function removeCompressBaseComment(file, signal) {
 
   while (scanStart < moovEnd) {
     checkAbort(signal);
+
     const ownedEnd = Math.min(scanStart + chunkSize, moovEnd);
-    const readEnd = Math.min(ownedEnd + marker.length - 1, moovEnd);
+    const readEnd = Math.min(
+      ownedEnd + marker.length - 1,
+      moovEnd
+    );
+
     const bytes = new Uint8Array(
       await file.slice(scanStart, readEnd).arrayBuffer()
     );
 
     for (let i = 0; i <= bytes.length - marker.length; i += 1) {
       if (scanStart + i >= ownedEnd) break;
+
       let match = true;
+
       for (let j = 0; j < marker.length; j += 1) {
         if (bytes[i + j] !== marker[j]) {
           match = false;
           break;
         }
       }
-      if (match) foundOffsets.push(scanStart + i);
+
+      if (match) {
+        foundOffsets.push(scanStart + i);
+      }
     }
+
     scanStart = ownedEnd;
   }
 
   if (foundOffsets.length === 0) {
-    return { blob: file, removedCount: 0 };
+    return {
+      blob: file,
+      removedCount: 0,
+    };
   }
 
   const parts = [];
   let copyFrom = 0;
   const blank = new Uint8Array(marker.length);
+
   for (const found of foundOffsets) {
-    parts.push(file.slice(copyFrom, found), blank);
+    parts.push(
+      file.slice(copyFrom, found),
+      blank
+    );
+
     copyFrom = found + marker.length;
   }
+
   parts.push(file.slice(copyFrom));
 
   return {
@@ -141,19 +173,29 @@ export async function optimizeVideo(
     onStatus = () => {},
   } = options ?? {};
 
-  if (!file || typeof file.slice !== 'function' || typeof file.size !== 'number') {
+  if (
+    !file ||
+    typeof file.slice !== 'function' ||
+    typeof file.size !== 'number'
+  ) {
     throw new Error('ဗီဒီယိုဖိုင်ကို ရွေးပါ။');
   }
+
   if (file.size < 16) {
     throw new Error('ရွေးထားတဲ့ ဗီဒီယိုဖိုင်က ဗလာဖြစ်နေပါတယ်။');
   }
+
   if (file.size > 8 * 1024 ** 3) {
     throw new Error('CompressBase က 8 GB အထိ MP4 ဖိုင်ကိုသာ လက်ခံသည်။');
   }
+
   if (file.name && !/\.mp4$/i.test(file.name)) {
     throw new Error('မြန်ဆန်တဲ့ mode အတွက် MP4 ဖိုင်ကို ရွေးပါ။');
   }
-  if (!['variant-1', 'variant-2', 'variant-3'].includes(postingDevice)) {
+
+  if (
+    !['variant-1', 'variant-2', 'variant-3'].includes(postingDevice)
+  ) {
     throw new Error('postingDevice တန်ဖိုး မမှန်ပါ။');
   }
 
@@ -162,45 +204,55 @@ export async function optimizeVideo(
 
   try {
     onStatus('မူရင်းဗီဒီယိုကို မပြန် encode ဘဲ patch လုပ်နေသည်…');
+
     const { patchVideo } = await getCompressBase();
+
     if (typeof patchVideo !== 'function') {
       throw new Error('CompressBase patchVideo module ကို မရရှိနိုင်ပါ။');
     }
 
-    // Pass the original MP4 directly. This intentionally skips the slow
-    // FFmpeg.wasm upscale/FPS-conversion pipeline.
+    // Pass the original MP4 directly.
+    // No FFmpeg.wasm upscale or FPS conversion.
     const patchedBlob = await patchVideo(file, {
       postingDevice,
       signal,
       onStatus: (message) => onStatus(message),
     });
+
     if (!(patchedBlob instanceof Blob) || patchedBlob.size === 0) {
       throw new Error('CompressBase က ဗလာ MP4 ဖိုင်ကို ပြန်ပေးခဲ့သည်။');
     }
 
     checkAbort(signal);
     onProgress(85);
+
     onStatus('MP4 metadata ကို ရှင်းလင်းနေသည်…');
-    const { blob: outputBlob, removedCount } =
-      await removeCompressBaseComment(patchedBlob, signal);
+
+    const {
+      blob: outputBlob,
+      removedCount
+    } = await removeCompressBaseComment(
+      patchedBlob,
+      signal
+    );
 
     checkAbort(signal);
     onProgress(100);
+
     onStatus(
       removedCount > 0
         ? 'ပြီးပါပြီ။ မူရင်း resolution/FPS ကို ထိန်းထားပြီး metadata မှတ်ချက်ကို ဖယ်ရှားလိုက်သည်။'
         : 'ပြီးပါပြီ။ မူရင်း resolution/FPS ကို ထိန်းထားသည်။'
     );
 
-    const sourceName = file.name || 'video.mp4';
-    const baseName = sourceName.replace(/\.mp4$/i, '');
-    const suffix = mode === 'tiktok' ? '-fast-tiktok' : '-fast';
+    // NEON COMPRESS output filename
     return {
       blob: outputBlob,
-      name: `${baseName}${suffix}.mp4`,
+      name: 'neonbase.mp4',
     };
+
   } catch (error) {
-    console.error('Fast processing error:', error);
+    console.error('NEON COMPRESS processing error:', error);
     throw error;
   }
 }
