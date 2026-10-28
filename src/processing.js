@@ -1,96 +1,198 @@
-// NEON COMPRESS V3 — FAST QUALITY + FPS PROCESSOR
-// Fast path: do not re-encode the video. The original picture, audio and FPS
-// remain unchanged; CompressBase patches MP4 metadata/container locally.
-// TikTok may still transcode/compress uploaded videos, so blur-free playback
-// cannot be guaranteed.
+// NEON COMPRESS V3 — QUALITY + FPS PROCESSOR
+// Pipeline:
+// Original MP4 → downscaleVideo() → patchVideo() → Download MP4
+//
+// Uses CompressBase browser modules.
+// Attempts to preserve source FPS, including 60/120 FPS.
+// TikTok may still re-encode uploaded videos.
 
-let compressBaseModulePromise = null;
+let compressBaseModulesPromise = null;
 
-async function getCompressBase() {
-  if (!compressBaseModulePromise) {
-    // @vite-ignore keeps this official browser module external to the app bundle.
-    compressBaseModulePromise = import(
-      /* @vite-ignore */ 'https://compressbase.com/method-api/client.mjs'
-    ).catch((error) => {
-      compressBaseModulePromise = null;
+async function getCompressBaseModules() {
+  if (!compressBaseModulesPromise) {
+    compressBaseModulesPromise = Promise.all([
+      import(
+        /* @vite-ignore */
+        'https://compressbase.com/method-api/downscale.mjs'
+      ),
+      import(
+        /* @vite-ignore */
+        'https://compressbase.com/method-api/client.mjs'
+      )
+    ]).then(([downscaleModule, patchModule]) => ({
+      downscaleVideo: downscaleModule.downscaleVideo,
+      patchVideo: patchModule.patchVideo
+    })).catch(error => {
+      compressBaseModulesPromise = null;
       throw error;
     });
   }
-  return compressBaseModulePromise;
+
+  return compressBaseModulesPromise;
 }
 
 /**
- * Apply the CompressBase Quality + FPS patch without the slow FFmpeg re-encode.
- * Keeps the source video/audio streams intact; this is a fast container patch,
- * not image sharpening or TikTok compression removal.
+ * NEON COMPRESS V3
  *
- * @param {File|Blob} file MP4 selected directly from an <input type="file">.
- * @param {(percent: number) => void} onProgress Optional UI progress callback.
- * @param {string} mode Retained for compatibility with existing callers.
- * @param {{postingDevice?: string, signal?: AbortSignal, onStatus?: (message: string) => void}} options
- * @returns {Promise<{blob: Blob, name: string}>}
+ * @param {File|Blob} file
+ * @param {(percent:number)=>void} onProgress
+ * @param {string} mode
+ * @param {{
+ *   postingDevice?:string,
+ *   signal?:AbortSignal,
+ *   onStatus?:(message:string)=>void
+ * }} options
+ *
+ * @returns {Promise<{blob:Blob,name:string}>}
  */
+
 export async function optimizeVideo(
   file,
   onProgress = () => {},
   mode = 'max',
   options = {}
 ) {
+
   const {
     postingDevice = 'variant-1',
     signal,
-    onStatus = () => {},
+    onStatus = () => {}
   } = options ?? {};
 
-  if (!file || typeof file.slice !== 'function' || typeof file.size !== 'number') {
+  // Validate video
+  if (
+    !file ||
+    typeof file.slice !== 'function' ||
+    typeof file.size !== 'number'
+  ) {
     throw new Error('Please select a valid video file.');
   }
+
   if (file.name && !/\.mp4$/i.test(file.name)) {
     throw new Error('Please select an MP4 video.');
   }
+
   if (file.size < 16) {
-    throw new Error('The selected video file is too small or empty.');
+    throw new Error('The selected video file is empty.');
   }
-  if (file.size > 8 * 1024 ** 3) {
-    throw new Error('CompressBase supports MP4 files up to 8 GiB.');
-  }
-  if (!['variant-1', 'variant-2', 'variant-3'].includes(postingDevice)) {
-    throw new Error('Choose variant-1, variant-2, or variant-3.');
+
+  if (![
+    'variant-1',
+    'variant-2',
+    'variant-3'
+  ].includes(postingDevice)) {
+    throw new Error('Invalid processing variant.');
   }
 
   signal?.throwIfAborted();
-  onProgress(5);
-  onStatus('Preparing the MP4 for Quality + FPS…');
+
+  onProgress(2);
+  onStatus('Loading Quality + FPS processor…');
 
   try {
-    const { patchVideo } = await getCompressBase();
+
+    const {
+      downscaleVideo,
+      patchVideo
+    } = await getCompressBaseModules();
+
     signal?.throwIfAborted();
 
-    const patchedBlob = await patchVideo(file, {
-      postingDevice,
+    // STEP 1
+    // Process video frames and preserve source FPS where supported.
+
+    onStatus('Processing video quality and FPS…');
+
+    const processedMp4 = await downscaleVideo(file, {
+
       signal,
-      onStatus: (message) => {
-        onStatus(message);
-        onProgress(75);
-      },
+
+      onStatus,
+
+      onProgress: fraction => {
+
+        const safeFraction = Math.max(
+          0,
+          Math.min(1, Number(fraction) || 0)
+        );
+
+        onProgress(
+          Math.round(safeFraction * 90)
+        );
+
+      }
+
     });
 
-    if (!(patchedBlob instanceof Blob) || patchedBlob.size === 0) {
-      throw new Error('CompressBase returned an empty MP4.');
+    signal?.throwIfAborted();
+
+    if (
+      !(processedMp4 instanceof Blob) ||
+      processedMp4.size === 0
+    ) {
+      throw new Error('Video processing returned an empty file.');
     }
 
+    // STEP 2
+    // Apply CompressBase MP4 patch.
+
+    onProgress(92);
+    onStatus('Applying Quality + FPS MP4 patch…');
+
+    const patchedBlob = await patchVideo(processedMp4, {
+
+      postingDevice,
+
+      signal,
+
+      onStatus
+
+    });
+
+    signal?.throwIfAborted();
+
+    if (
+      !(patchedBlob instanceof Blob) ||
+      patchedBlob.size === 0
+    ) {
+      throw new Error('MP4 patch returned an empty file.');
+    }
+
+    // STEP 3
+    // Prepare final download.
+
     const sourceName = file.name || 'video.mp4';
+
     const originalName = sourceName.replace(/\.mp4$/i, '');
-    const suffix = mode === 'tiktok' ? '-neon-tiktok-quality-fps' : '-neon-quality-fps';
+
+    const suffix =
+      mode === 'tiktok'
+        ? '-neon-tiktok-quality-fps'
+        : '-neon-quality-fps';
 
     onProgress(100);
-    onStatus('Done. Download the patched MP4 and upload it to TikTok.');
+
+    onStatus(
+      'Processing complete. Download your MP4.'
+    );
+
     return {
+
       blob: patchedBlob,
-      name: `${originalName}${suffix}.mp4`,
+
+      name: `${originalName}${suffix}.mp4`
+
     };
+
   } catch (error) {
-    console.error('NEON COMPRESS processing error:', error);
+
+    console.error(
+      'NEON COMPRESS V3 processing error:',
+      error
+    );
+
     throw error;
+
   }
+
 }
