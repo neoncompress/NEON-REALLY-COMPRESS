@@ -934,15 +934,6 @@ video{
 
     <div class="badge">PLEASE UPLOAD YOUR VIDEO IN 1080P</div>
 
-    <div style="margin-top:16px;text-align:left">
-      <label for="encodingMode" class="label" style="display:block;margin-bottom:8px">ENCODING MODE</label>
-      <select id="encodingMode" style="width:100%;padding:13px;border-radius:12px;border:1px solid #ffffff38;background:#1b0c12;color:#fff">
-        <option value="max">MAX QUALITY — stream copy (fastest)</option>
-        <option value="tiktok">TIKTOK QUALITY TEST — H.264 CRF 17</option>
-      </select>
-      <p id="encodingHelp" class="note" style="text-align:left;margin:8px 0 0">Keeps the original encoded video and audio streams; no re-encoding.</p>
-    </div>
-
     <div class="file" id="fileBox">
       <strong id="fileName"></strong>
       <small id="fileSize"></small>
@@ -968,7 +959,7 @@ video{
   <div class="card center">
     <div class="label">02 / PROCESSING</div>
     <h2>Optimizing your video</h2>
-    <p class="sub" id="processingDescription">Processing video in selected mode.</p>
+    <p class="sub">Preserving original video and audio streams.</p>
 
     <div class="ring" id="ring">
       <div class="ring-sparks" aria-hidden="true" id="ringSparks"></div>
@@ -999,7 +990,7 @@ video{
     </button>
 
     <p class="note">
-      Output is ready. TikTok may still recompress uploaded videos.
+      The encoded video/audio streams were copied without re-encoding.
     </p>
 
     <button class="btn secondary" id="again" type="button">
@@ -1058,7 +1049,7 @@ video{
     <h2>Welcome to NEON COMPRESS</h2>
 
     <p>Please check your internet connection before processing. An unstable connection may cause errors.</p>
-    <p>MAX QUALITY preserves original streams. TIKTOK QUALITY TEST re-encodes to H.264.</p>
+    <p>Original video resolution and FPS are preserved in MAX QUALITY mode.</p>
     <p>For the best experience, use Microsoft Edge, Quetta, or Google Chrome.</p>
 
     <button class="btn primary" id="continue" type="button">
@@ -1319,12 +1310,6 @@ function reset() {
   page(0);
 }
 
-$('encodingMode').addEventListener('change', () => {
-  $('encodingHelp').textContent = $('encodingMode').value === 'tiktok'
-    ? 'Re-encodes to H.264 at CRF 17 using the source resolution and frame rate. This may take longer and cannot guarantee TikTok playback quality.'
-    : 'Keeps the original encoded video and audio streams; no re-encoding.';
-});
-
 $('videoInput').addEventListener('change', e =>
   setFile(e.target.files[0])
 );
@@ -1391,9 +1376,6 @@ $('start').addEventListener('click', async () => {
 
     progress = 0;
     $('processingName').textContent = file.name;
-    $('processingDescription').textContent = $('encodingMode').value === 'tiktok'
-      ? 'Encoding H.264 · CRF 17 · source resolution and FPS'
-      : 'Copying original video and audio streams';
     $('percentage').textContent = '0%';
     $('ring').style.setProperty('--progress', '0%');
 
@@ -1404,7 +1386,7 @@ $('start').addEventListener('click', async () => {
       progress = value;
       $('percentage').textContent = value + '%';
       $('ring').style.setProperty('--progress', value + '%');
-    }, $('encodingMode').value);
+    });
 
     if (!result || !result.blob) {
       throw new Error('Video processing returned no output.');
