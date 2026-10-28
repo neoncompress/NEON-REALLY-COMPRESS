@@ -1,31 +1,60 @@
 // NEON COMPRESS V3
-// MAX QUALITY: patch the original MP4 without downscaleVideo.
-// TIKTOK QUALITY TEST: downscaleVideo first, then patchVideo.
+// MAX QUALITY + FPS
 //
-// Important: FPS preservation depends on the external modules.
-// TikTok may also transcode the uploaded video.
+// MAX QUALITY:
+//   - Does NOT call downscaleVideo().
+//   - Sends the original MP4 directly to patchVideo().
+//   - Avoids an additional video re-encoding stage.
+//
+// TIKTOK QUALITY TEST:
+//   - Runs downscaleVideo(), then patchVideo().
+//
+// IMPORTANT:
+//   TikTok may transcode uploaded videos.
+//   Final TikTok FPS, codec, resolution and file size
+//   cannot be guaranteed by this processor alone.
 
-let modulesPromise = null;
+let clientModulePromise = null;
+let allModulesPromise = null;
 
-async function getModules() {
-  if (!modulesPromise) {
-    modulesPromise = Promise.all([
+async function getClientModule() {
+  if (!clientModulePromise) {
+    clientModulePromise = import(
+      /* @vite-ignore */
+      'https://compressbase.com/method-api/client.mjs'
+    )
+      .then(module => {
+        if (typeof module.patchVideo !== 'function') {
+          throw new Error(
+            'CompressBase patchVideo() is unavailable.'
+          );
+        }
+
+        return module;
+      })
+      .catch(error => {
+        clientModulePromise = null;
+        throw error;
+      });
+  }
+
+  return clientModulePromise;
+}
+
+async function getAllModules() {
+  if (!allModulesPromise) {
+    allModulesPromise = Promise.all([
       import(
         /* @vite-ignore */
         'https://compressbase.com/method-api/downscale.mjs'
       ),
-      import(
-        /* @vite-ignore */
-        'https://compressbase.com/method-api/client.mjs'
-      )
+      getClientModule()
     ])
       .then(([downscaleModule, clientModule]) => {
         if (typeof downscaleModule.downscaleVideo !== 'function') {
-          throw new Error('downscaleVideo() is unavailable.');
-        }
-
-        if (typeof clientModule.patchVideo !== 'function') {
-          throw new Error('patchVideo() is unavailable.');
+          throw new Error(
+            'CompressBase downscaleVideo() is unavailable.'
+          );
         }
 
         return {
@@ -34,12 +63,12 @@ async function getModules() {
         };
       })
       .catch(error => {
-        modulesPromise = null;
+        allModulesPromise = null;
         throw error;
       });
   }
 
-  return modulesPromise;
+  return allModulesPromise;
 }
 
 export async function optimizeVideo(
@@ -66,29 +95,50 @@ export async function optimizeVideo(
     throw new Error('Video exceeds the 8 GiB limit.');
   }
 
-  if (!['variant-1', 'variant-2', 'variant-3'].includes(postingDevice)) {
-    throw new Error('Invalid posting device.');
-  }
-
   if (!['max', 'tiktok'].includes(mode)) {
     throw new Error('Invalid processing mode.');
   }
 
+  if (!['variant-1', 'variant-2', 'variant-3'].includes(
+    postingDevice
+  )) {
+    throw new Error('Invalid posting device.');
+  }
+
   signal?.throwIfAborted();
 
-  onProgress(3);
-  onStatus('Loading video processing modules…');
-
-  const { downscaleVideo, patchVideo } = await getModules();
-
-  signal?.throwIfAborted();
+  const originalName = file.name.replace(/\.mp4$/i, '');
 
   let inputForPatch = file;
+  let patchVideo;
 
-  if (mode === 'tiktok') {
+  // MAX QUALITY:
+  // Skip downscaleVideo completely.
+  if (mode === 'max') {
+    onProgress(10);
+    onStatus(
+      'MAX QUALITY: preparing the original MP4 without downscaling…'
+    );
+
+    const clientModule = await getClientModule();
+    patchVideo = clientModule.patchVideo;
+
+    onProgress(25);
+  } else {
+    // TIKTOK QUALITY TEST:
+    // Run the external downscale pipeline first.
+    onProgress(5);
+    onStatus('Loading video processing modules…');
+
+    const modules = await getAllModules();
+
+    patchVideo = modules.patchVideo;
+
+    signal?.throwIfAborted();
+
     onStatus('Running TikTok quality processing…');
 
-    inputForPatch = await downscaleVideo(file, {
+    inputForPatch = await modules.downscaleVideo(file, {
       signal,
       onStatus,
       onProgress: fraction => {
@@ -96,7 +146,9 @@ export async function optimizeVideo(
 
         if (Number.isFinite(value)) {
           onProgress(
-            Math.round(Math.max(0, Math.min(1, value)) * 80)
+            Math.round(
+              Math.max(0, Math.min(1, value)) * 75
+            )
           );
         }
       }
@@ -104,17 +156,23 @@ export async function optimizeVideo(
 
     signal?.throwIfAborted();
 
-    if (!(inputForPatch instanceof Blob) || inputForPatch.size < 16) {
-      throw new Error('Video processing returned an invalid file.');
+    if (
+      !(inputForPatch instanceof Blob) ||
+      inputForPatch.size < 16
+    ) {
+      throw new Error(
+        'Video processing returned an invalid file.'
+      );
     }
-  } else {
-    onProgress(25);
-    onStatus('MAX QUALITY: preparing the original MP4 without downscaling…');
   }
 
   signal?.throwIfAborted();
 
-  onStatus('Applying MP4 preparation…');
+  onStatus(
+    mode === 'max'
+      ? 'Preparing original video stream…'
+      : 'Applying MP4 preparation…'
+  );
 
   const outputBlob = await patchVideo(inputForPatch, {
     postingDevice,
@@ -125,18 +183,20 @@ export async function optimizeVideo(
   signal?.throwIfAborted();
 
   if (!(outputBlob instanceof Blob) || outputBlob.size < 16) {
-    throw new Error('MP4 preparation returned an invalid file.');
+    throw new Error(
+      'MP4 preparation returned an invalid file.'
+    );
   }
 
-  const originalName = (file.name || 'video.mp4')
-    .replace(/\.mp4$/i, '');
-
-  const suffix = mode === 'tiktok'
-    ? '-neon-tiktok-quality-fps'
-    : '-neon-quality-fps';
-
   onProgress(100);
-  onStatus('Finished. Check the output FPS before uploading to TikTok.');
+
+  onStatus(
+    'Finished. Verify the output FPS before uploading to TikTok.'
+  );
+
+  const suffix = mode === 'max'
+    ? '-neon-quality-fps'
+    : '-neon-tiktok-quality-fps';
 
   return {
     blob: outputBlob,
