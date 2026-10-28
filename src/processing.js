@@ -1,14 +1,65 @@
-// NEON COMPRESS V3 — FAST QUALITY + FPS PROCESSOR
-// Fast path: do not re-encode the video. The original picture, audio and FPS
-// remain unchanged; CompressBase patches MP4 metadata/container locally.
-// After patching, remove only the exact "Patched by Compressbase" comment
-// from the MP4 moov metadata. No video/audio samples are re-encoded.
+// ZILEM METHOD — 1080p60 PROCESSING JS
+// Paste this module into the site's Processing JS field if it accepts ES modules.
+// Pipeline: encode to 1080x1920 / 60 fps in the browser with FFmpeg.wasm, then
+// apply CompressBase's MP4 patch and remove its exact metadata comment.
+// NOTE: 30 fps source -> 60 fps output means duplicated frames, not new motion.
+// TikTok may re-encode the upload and can still change the delivered frame rate.
 
+let ffmpegPromise = null;
 let compressBaseModulePromise = null;
+
+const FFMPEG_JS_URL =
+  'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm/index.js';
+const FFMPEG_UTIL_URL =
+  'https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.2/dist/esm/index.js';
+const FFMPEG_CORE_BASE =
+  'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm';
+
+function checkAbort(signal) {
+  if (signal?.aborted) {
+    throw new DOMException('Processing cancelled.', 'AbortError');
+  }
+}
+
+async function getFFmpeg(onStatus = () => {}) {
+  if (!ffmpegPromise) {
+    ffmpegPromise = (async () => {
+      onStatus('1080p60 processor татаж байна (~31 MB)…');
+
+      const [ffmpegModule, utilModule] = await Promise.all([
+        import(/* @vite-ignore */ FFMPEG_JS_URL),
+        import(/* @vite-ignore */ FFMPEG_UTIL_URL),
+      ]);
+
+      const { FFmpeg } = ffmpegModule;
+      const { toBlobURL } = utilModule;
+      if (!FFmpeg || !toBlobURL) {
+        throw new Error('FFmpeg.wasm module ачаалж чадсангүй.');
+      }
+
+      const ffmpeg = new FFmpeg();
+      const coreURL = await toBlobURL(
+        `${FFMPEG_CORE_BASE}/ffmpeg-core.js`,
+        'text/javascript'
+      );
+      const wasmURL = await toBlobURL(
+        `${FFMPEG_CORE_BASE}/ffmpeg-core.wasm`,
+        'application/wasm'
+      );
+
+      onStatus('FFmpeg.wasm эхлүүлж байна…');
+      await ffmpeg.load({ coreURL, wasmURL });
+      return ffmpeg;
+    })().catch((error) => {
+      ffmpegPromise = null;
+      throw error;
+    });
+  }
+  return ffmpegPromise;
+}
 
 async function getCompressBase() {
   if (!compressBaseModulePromise) {
-    // @vite-ignore keeps this official browser module external to the app bundle.
     compressBaseModulePromise = import(
       /* @vite-ignore */ 'https://compressbase.com/method-api/client.mjs'
     ).catch((error) => {
@@ -20,12 +71,8 @@ async function getCompressBase() {
 }
 
 /**
- * Remove the exact CompressBase comment from the MP4 moov atom.
- * This only edits the metadata bytes; video/audio data and timestamps stay intact.
- *
- * @param {Blob} file Patched MP4.
- * @param {AbortSignal} [signal] Optional cancellation signal.
- * @returns {Promise<{blob: Blob, removedCount: number}>}
+ * Remove only the exact CompressBase marker from the MP4 moov atom.
+ * The marker is blanked without changing atom sizes or media samples.
  */
 export async function removeCompressBaseComment(file, signal) {
   const marker = new TextEncoder().encode('Patched by Compressbase');
@@ -35,13 +82,18 @@ export async function removeCompressBaseComment(file, signal) {
   let moovEnd = -1;
   let moovHeaderSize = 8;
 
-  // Read only MP4 atom headers until the metadata (moov) atom is found.
   while (offset + 8 <= file.size) {
-    signal?.throwIfAborted();
-    const headerBytes = new Uint8Array(await file.slice(offset, offset + 16).arrayBuffer());
+    checkAbort(signal);
+    const headerBytes = new Uint8Array(
+      await file.slice(offset, offset + 16).arrayBuffer()
+    );
     if (headerBytes.length < 8) break;
 
-    const view = new DataView(headerBytes.buffer, headerBytes.byteOffset, headerBytes.byteLength);
+    const view = new DataView(
+      headerBytes.buffer,
+      headerBytes.byteOffset,
+      headerBytes.byteLength
+    );
     let atomSize = view.getUint32(0);
     const atomType = String.fromCharCode(
       headerBytes[4], headerBytes[5], headerBytes[6], headerBytes[7]
@@ -50,11 +102,11 @@ export async function removeCompressBaseComment(file, signal) {
 
     if (atomSize === 1) {
       if (headerBytes.length < 16) {
-        throw new Error('The MP4 has an incomplete extended atom header.');
+        throw new Error('MP4 atom header မပြည့်စုံပါ။');
       }
       const extendedSize = view.getBigUint64(8);
       if (extendedSize > BigInt(Number.MAX_SAFE_INTEGER)) {
-        throw new Error('The MP4 atom is too large for safe metadata editing.');
+        throw new Error('MP4 metadata အရွယ်အစား အလွန်ကြီးနေပါသည်။');
       }
       atomSize = Number(extendedSize);
       headerSize = 16;
@@ -63,7 +115,7 @@ export async function removeCompressBaseComment(file, signal) {
     }
 
     if (atomSize < headerSize || offset + atomSize > file.size) {
-      throw new Error('The MP4 atom structure is invalid; metadata was not changed.');
+      throw new Error('MP4 atom бүтэц буруу тул metadata-г өөрчилсөнгүй.');
     }
 
     if (atomType === 'moov') {
@@ -76,19 +128,20 @@ export async function removeCompressBaseComment(file, signal) {
   }
 
   if (moovStart < 0) {
-    throw new Error('Could not find the MP4 metadata atom (moov).');
+    throw new Error('MP4 metadata (moov atom) олдсонгүй.');
   }
 
-  // Search only inside moov, never in the compressed video/audio payload.
   const searchStart = moovStart + moovHeaderSize;
   const foundOffsets = [];
   let scanStart = searchStart;
 
   while (scanStart < moovEnd) {
-    signal?.throwIfAborted();
+    checkAbort(signal);
     const ownedEnd = Math.min(scanStart + chunkSize, moovEnd);
     const readEnd = Math.min(ownedEnd + marker.length - 1, moovEnd);
-    const bytes = new Uint8Array(await file.slice(scanStart, readEnd).arrayBuffer());
+    const bytes = new Uint8Array(
+      await file.slice(scanStart, readEnd).arrayBuffer()
+    );
 
     for (let i = 0; i <= bytes.length - marker.length; i += 1) {
       if (scanStart + i >= ownedEnd) break;
@@ -108,8 +161,6 @@ export async function removeCompressBaseComment(file, signal) {
     return { blob: file, removedCount: 0 };
   }
 
-  // Replace the text with zero bytes of the same length, keeping every MP4
-  // atom size and every video/audio sample exactly where it was.
   const parts = [];
   let copyFrom = 0;
   const blank = new Uint8Array(marker.length);
@@ -125,16 +176,92 @@ export async function removeCompressBaseComment(file, signal) {
   };
 }
 
+async function encode1080p60(file, onProgress, onStatus, signal) {
+  const ffmpeg = await getFFmpeg(onStatus);
+  checkAbort(signal);
+
+  const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const inputName = `zilem-input-${id}.mp4`;
+  const outputName = `zilem-output-${id}.mp4`;
+  let progressHandler;
+  let abortHandler;
+
+  try {
+    onStatus('မူရင်းဗီဒီယိုကို 1080p60 အဖြစ် encode လုပ်နေသည်…');
+    onProgress(10);
+
+    const inputBytes = new Uint8Array(await file.arrayBuffer());
+    checkAbort(signal);
+    await ffmpeg.writeFile(inputName, inputBytes);
+
+    progressHandler = ({ progress }) => {
+      if (Number.isFinite(progress)) {
+        const percent = Math.max(0, Math.min(1, progress));
+        onProgress(Math.round(12 + percent * 68));
+      }
+    };
+    ffmpeg.on('progress', progressHandler);
+
+    // If the user cancels during the WASM encode, terminate that FFmpeg worker.
+    abortHandler = () => {
+      try {
+        ffmpeg.terminate();
+      } finally {
+        ffmpegPromise = null;
+      }
+    };
+    signal?.addEventListener('abort', abortHandler, { once: true });
+
+    await ffmpeg.exec([
+      '-i', inputName,
+      '-map', '0:v:0',
+      '-map', '0:a?',
+      '-map_metadata', '0',
+      '-vf',
+      'scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=60',
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-crf', '18',
+      '-profile:v', 'high',
+      '-level:v', '4.2',
+      '-pix_fmt', 'yuv420p',
+      '-fps_mode:v', 'cfr',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-ar', '48000',
+      '-movflags', '+faststart',
+      outputName,
+    ]);
+
+    checkAbort(signal);
+    const data = await ffmpeg.readFile(outputName);
+    if (!(data instanceof Uint8Array) || data.byteLength === 0) {
+      throw new Error('FFmpeg.wasm гаралтын MP4 хоосон байна.');
+    }
+    onProgress(82);
+    return new Blob([data], { type: 'video/mp4' });
+  } catch (error) {
+    if (signal?.aborted) {
+      throw new DOMException('Processing cancelled.', 'AbortError');
+    }
+    throw error;
+  } finally {
+    signal?.removeEventListener('abort', abortHandler);
+    if (progressHandler) ffmpeg.off('progress', progressHandler);
+    try { await ffmpeg.deleteFile(inputName); } catch (_) {}
+    try { await ffmpeg.deleteFile(outputName); } catch (_) {}
+  }
+}
+
 /**
- * Apply the CompressBase Quality + FPS patch without the slow FFmpeg re-encode.
- * Keeps the source video/audio streams intact; this is a fast container patch,
- * not image sharpening or TikTok compression removal.
+ * Drop-in processing function for callers using the attached CompressBase JS.
+ * Output: MP4, 1080x1920, constant 60 fps, H.264 + AAC, then CompressBase patch.
  *
- * @param {File|Blob} file MP4 selected directly from an <input type="file">.
- * @param {(percent: number) => void} onProgress Optional UI progress callback.
- * @param {string} mode Retained for compatibility with existing callers.
- * @param {{postingDevice?: string, signal?: AbortSignal, onStatus?: (message: string) => void}} options
- * @returns {Promise<{blob: Blob, name: string}>}
+ * @param {File|Blob} file Input video.
+ * @param {(percent:number)=>void} onProgress Progress callback.
+ * @param {string} mode Kept for compatibility with the old caller.
+ * @param {{postingDevice?:string, signal?:AbortSignal, onStatus?:(s:string)=>void}} options
+ * @returns {Promise<{blob:Blob, name:string}>}
  */
 export async function optimizeVideo(
   file,
@@ -149,66 +276,69 @@ export async function optimizeVideo(
   } = options ?? {};
 
   if (!file || typeof file.slice !== 'function' || typeof file.size !== 'number') {
-    throw new Error('Please select a valid video file.');
+    throw new Error('ဗီဒီယိုဖိုင်ကို ရွေးပါ။');
   }
-  if (file.name && !/\.mp4$/i.test(file.name)) {
-    throw new Error('Please select an MP4 video.');
-  }
-  if (file.size < 16) {
-    throw new Error('The selected video file is too small or empty.');
-  }
-  if (file.size > 8 * 1024 ** 3) {
-    throw new Error('CompressBase supports MP4 files up to 8 GiB.');
+  if (file.size < 16) throw new Error('ရွေးထားတဲ့ ဗီဒီယိုဖိုင်က ဗလာဖြစ်နေပါတယ်။');
+  if (file.size > 1024 ** 3) {
+    throw new Error('Browser မှာလုပ်ဆောင်ရန် 1 GB အောက်ရှိ ဗီဒီယိုကို သုံးပါ။');
   }
   if (!['variant-1', 'variant-2', 'variant-3'].includes(postingDevice)) {
-    throw new Error('Choose variant-1, variant-2, or variant-3.');
+    throw new Error('postingDevice တန်ဖိုး မမှန်ပါ။');
   }
-
-  signal?.throwIfAborted();
-  onProgress(5);
-  onStatus('Preparing the MP4 for Quality + FPS…');
+  checkAbort(signal);
 
   try {
-    const { patchVideo } = await getCompressBase();
-    signal?.throwIfAborted();
-
-    const patchedBlob = await patchVideo(file, {
-      postingDevice,
-      signal,
-      onStatus: (message) => {
-        onStatus(message);
-        onProgress(70);
-      },
-    });
-
-    if (!(patchedBlob instanceof Blob) || patchedBlob.size === 0) {
-      throw new Error('CompressBase returned an empty MP4.');
-    }
-
-    onStatus('Removing the CompressBase comment from MP4 metadata…');
-    onProgress(85);
-    const { blob: outputBlob, removedCount } = await removeCompressBaseComment(
-      patchedBlob,
+    // Do the 60 fps encode first. Then CompressBase patches that finished MP4,
+    // rather than letting its old 30 fps processing path reduce the frame rate.
+    const encodedBlob = await encode1080p60(
+      file,
+      onProgress,
+      onStatus,
       signal
     );
-    signal?.throwIfAborted();
+    checkAbort(signal);
 
-    const sourceName = file.name || 'video.mp4';
-    const originalName = sourceName.replace(/\.mp4$/i, '');
-    const suffix = mode === 'tiktok' ? '-neon-tiktok-quality-fps' : '-neon-quality-fps';
+    onStatus('CompressBase-ийн MP4 patch хийж байна…');
+    onProgress(85);
+    const { patchVideo } = await getCompressBase();
+    if (typeof patchVideo !== 'function') {
+      throw new Error('CompressBase-ийн patchVideo module олдсонгүй။');
+    }
 
+    const patchInput = new File(
+      [encodedBlob],
+      'zilem-1080p60.mp4',
+      { type: 'video/mp4' }
+    );
+    const patchedBlob = await patchVideo(patchInput, {
+      postingDevice,
+      signal,
+      onStatus: (message) => onStatus(message),
+    });
+    if (!(patchedBlob instanceof Blob) || patchedBlob.size === 0) {
+      throw new Error('CompressBase хоосон MP4 ဖိုင် ပြန်ပေးခဲ့သည်။');
+    }
+
+    onStatus('MP4 metadata ကို ရှင်းလင်းနေသည်…');
+    onProgress(94);
+    const { blob: outputBlob, removedCount } =
+      await removeCompressBaseComment(patchedBlob, signal);
+    checkAbort(signal);
+
+    const originalName = (file.name || 'video.mp4').replace(/\.[^/.]+$/, '');
     onProgress(100);
     onStatus(
       removedCount > 0
-        ? 'Done. CompressBase comment removed; video and FPS were not re-encoded.'
-        : 'Done. No CompressBase comment was found; video and FPS were not re-encoded.'
+        ? 'ပြီးပါပြီ။ 1080p60 MP4 ပြုလုပ်ပြီး CompressBase မှတ်ချက်ကို ဖယ်ရှားလိုက်သည်။'
+        : 'ပြီးပါပြီ။ 1080p60 MP4 ပြုလုပ်ပြီးဖြစ်သည်။'
     );
+
     return {
       blob: outputBlob,
-      name: `${originalName}${suffix}.mp4`,
+      name: `${originalName}-zilem-1080p60.mp4`,
     };
   } catch (error) {
-    console.error('NEON COMPRESS processing error:', error);
+    console.error('Zilem 1080p60 processing error:', error);
     throw error;
   }
 }
