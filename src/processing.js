@@ -1,14 +1,12 @@
-// NEON COMPRESS V3 — MP4 REPAIR PROCESSOR
-// Preserves encoded video/audio streams using stream copy.
-// Adds timeouts, MP4 remuxing and output-duration validation.
+// NEON COMPRESS V3 — FAST QUALITY + FPS PROCESSOR
+// Fast path: do not re-encode the video.
+// Original picture, audio and FPS remain unchanged.
+// CompressBase patches MP4 metadata/container locally.
+// Removes the exact "Patched by Compressbase" comment if present.
+//
+// Output filename: neoncompress.mp4
 
 let compressBaseModulePromise = null;
-let ffmpegModulePromise = null;
-let ffmpegInstancePromise = null;
-
-const MAX_FILE_SIZE = 8 * 1024 ** 3;
-const ENGINE_TIMEOUT = 120000;
-const REMUX_TIMEOUT = 120000;
 
 async function getCompressBase() {
   if (!compressBaseModulePromise) {
@@ -23,291 +21,193 @@ async function getCompressBase() {
   return compressBaseModulePromise;
 }
 
-async function getFFmpegModules() {
-  if (!ffmpegModulePromise) {
-    ffmpegModulePromise = Promise.all([
-      import(
-        /* @vite-ignore */ 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js'
-      ),
-      import(
-        /* @vite-ignore */ 'https://unpkg.com/@ffmpeg/util@0.12.2/dist/esm/index.js'
-      )
-    ]).catch((error) => {
-      ffmpegModulePromise = null;
-      throw error;
-    });
-  }
+/**
+ * Remove the exact CompressBase comment from the MP4 moov atom.
+ *
+ * @param {Blob} file
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<{blob: Blob, removedCount: number}>}
+ */
+export async function removeCompressBaseComment(file, signal) {
+  const marker = new TextEncoder().encode('Patched by Compressbase');
+  const chunkSize = 1024 * 1024;
 
-  return ffmpegModulePromise;
-}
+  let offset = 0;
+  let moovStart = -1;
+  let moovEnd = -1;
+  let moovHeaderSize = 8;
 
-function throwIfAborted(signal) {
-  if (signal?.aborted) {
-    throw new DOMException(
-      'The operation was aborted.',
-      'AbortError'
+  // Locate the MP4 moov atom.
+  while (offset + 8 <= file.size) {
+    signal?.throwIfAborted();
+
+    const headerBytes = new Uint8Array(
+      await file.slice(offset, offset + 16).arrayBuffer()
     );
-  }
-}
 
-function withTimeout(
-  promise,
-  timeoutMs,
-  label,
-  onTimeout = () => {}
-) {
-  let timer;
-
-  const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => {
-      try {
-        onTimeout();
-      } catch {}
-
-      reject(
-        new Error(
-          `${label} timed out after ${Math.round(timeoutMs / 1000)} seconds.`
-        )
-      );
-    }, timeoutMs);
-  });
-
-  return Promise.race([promise, timeout]).finally(() => {
-    clearTimeout(timer);
-  });
-}
-
-async function getFFmpeg(onStatus = () => {}) {
-  if (!ffmpegInstancePromise) {
-    ffmpegInstancePromise = (async () => {
-      const [{ FFmpeg }, { toBlobURL }] =
-        await getFFmpegModules();
-
-      const ffmpeg = new FFmpeg();
-
-      ffmpeg.on('log', ({ message }) => {
-        console.debug('[NEON COMPRESS FFmpeg]', message);
-      });
-
-      const packageURL =
-        'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm';
-
-      const coreURLBase =
-        'https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd';
-
-      onStatus('Loading FFmpeg worker…');
-
-      const classWorkerURL = await toBlobURL(
-        `${packageURL}/worker.js`,
-        'text/javascript'
-      );
-
-      const coreURL = await toBlobURL(
-        `${coreURLBase}/ffmpeg-core.js`,
-        'text/javascript'
-      );
-
-      const wasmURL = await toBlobURL(
-        `${coreURLBase}/ffmpeg-core.wasm`,
-        'application/wasm'
-      );
-
-      onStatus('Starting FFmpeg engine…');
-
-      await ffmpeg.load({
-        classWorkerURL,
-        coreURL,
-        wasmURL
-      });
-
-      return ffmpeg;
-    })().catch((error) => {
-      ffmpegInstancePromise = null;
-      throw error;
-    });
-  }
-
-  return ffmpegInstancePromise;
-}
-
-function getInputExtension(file) {
-  const match = String(file?.name || '').match(
-    /\.([a-z0-9]{1,8})$/i
-  );
-
-  return match ? match[1].toLowerCase() : 'mp4';
-}
-
-async function getVideoDuration(blob) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(blob);
-    const video = document.createElement('video');
-
-    let finished = false;
-
-    function cleanup() {
-      if (finished) return;
-
-      finished = true;
-      video.removeAttribute('src');
-      video.load();
-      URL.revokeObjectURL(url);
+    if (headerBytes.length < 8) {
+      break;
     }
 
-    const timer = setTimeout(() => {
-      cleanup();
+    const view = new DataView(
+      headerBytes.buffer,
+      headerBytes.byteOffset,
+      headerBytes.byteLength
+    );
 
-      reject(
-        new Error(
-          'Timed out while reading MP4 duration.'
-        )
-      );
-    }, 15000);
+    let atomSize = view.getUint32(0);
 
-    video.preload = 'metadata';
+    const atomType = String.fromCharCode(
+      headerBytes[4],
+      headerBytes[5],
+      headerBytes[6],
+      headerBytes[7]
+    );
 
-    video.onloadedmetadata = () => {
-      clearTimeout(timer);
+    let headerSize = 8;
 
-      const duration = video.duration;
-      cleanup();
-
-      if (
-        !Number.isFinite(duration) ||
-        duration <= 0
-      ) {
-        reject(
-          new Error(
-            'The MP4 duration is invalid.'
-          )
+    if (atomSize === 1) {
+      if (headerBytes.length < 16) {
+        throw new Error(
+          'The MP4 has an incomplete extended atom header.'
         );
-        return;
       }
 
-      resolve(duration);
-    };
+      const extendedSize = view.getBigUint64(8);
 
-    video.onerror = () => {
-      clearTimeout(timer);
-      cleanup();
+      if (extendedSize > BigInt(Number.MAX_SAFE_INTEGER)) {
+        throw new Error(
+          'The MP4 atom is too large for safe metadata editing.'
+        );
+      }
 
-      reject(
-        new Error(
-          'The browser cannot read the MP4 metadata.'
-        )
-      );
-    };
-
-    video.src = url;
-  });
-}
-
-async function remuxMP4(
-  inputBlob,
-  signal,
-  onStatus = () => {}
-) {
-  throwIfAborted(signal);
-
-  onStatus('Loading MP4 repair engine…');
-
-  const ffmpeg = await withTimeout(
-    getFFmpeg(onStatus),
-    ENGINE_TIMEOUT,
-    'FFmpeg engine loading',
-    () => {
-      try {
-        ffmpegInstancePromise = null;
-      } catch {}
+      atomSize = Number(extendedSize);
+      headerSize = 16;
+    } else if (atomSize === 0) {
+      atomSize = file.size - offset;
     }
-  );
 
-  throwIfAborted(signal);
-
-  const inputName =
-    `neon_input.${getInputExtension(inputBlob)}`;
-
-  const outputName = 'neoncompress_repaired.mp4';
-
-  try {
-    onStatus('Preparing video data…');
-
-    const inputBytes = new Uint8Array(
-      await inputBlob.arrayBuffer()
-    );
-
-    throwIfAborted(signal);
-
-    await ffmpeg.writeFile(
-      inputName,
-      inputBytes
-    );
-
-    onStatus(
-      'Rebuilding MP4 container and timestamps…'
-    );
-
-    await withTimeout(
-      ffmpeg.exec([
-        '-y',
-        '-fflags',
-        '+genpts',
-        '-i',
-        inputName,
-        '-map',
-        '0:v:0',
-        '-map',
-        '0:a?',
-        '-c',
-        'copy',
-        '-avoid_negative_ts',
-        'make_zero',
-        '-movflags',
-        '+faststart',
-        outputName
-      ]),
-      REMUX_TIMEOUT,
-      'MP4 remux',
-      () => {
-        try {
-          ffmpeg.terminate();
-        } catch {}
-
-        ffmpegInstancePromise = null;
-      }
-    );
-
-    throwIfAborted(signal);
-
-    onStatus('Reading repaired video…');
-
-    const outputData = await ffmpeg.readFile(
-      outputName
-    );
-
-    const outputBlob = new Blob(
-      [outputData],
-      { type: 'video/mp4' }
-    );
-
-    if (outputBlob.size === 0) {
+    if (
+      atomSize < headerSize ||
+      offset + atomSize > file.size
+    ) {
       throw new Error(
-        'MP4 repair produced an empty file.'
+        'The MP4 atom structure is invalid; metadata was not changed.'
       );
     }
 
-    return outputBlob;
-  } finally {
-    try {
-      await ffmpeg.deleteFile(inputName);
-    } catch {}
+    if (atomType === 'moov') {
+      moovStart = offset;
+      moovEnd = offset + atomSize;
+      moovHeaderSize = headerSize;
+      break;
+    }
 
-    try {
-      await ffmpeg.deleteFile(outputName);
-    } catch {}
+    offset += atomSize;
   }
+
+  if (moovStart < 0) {
+    throw new Error(
+      'Could not find the MP4 metadata atom (moov).'
+    );
+  }
+
+  // Search only inside moov.
+  const searchStart = moovStart + moovHeaderSize;
+  const foundOffsets = [];
+
+  let scanStart = searchStart;
+
+  while (scanStart < moovEnd) {
+    signal?.throwIfAborted();
+
+    const ownedEnd = Math.min(
+      scanStart + chunkSize,
+      moovEnd
+    );
+
+    const readEnd = Math.min(
+      ownedEnd + marker.length - 1,
+      moovEnd
+    );
+
+    const bytes = new Uint8Array(
+      await file.slice(scanStart, readEnd).arrayBuffer()
+    );
+
+    for (
+      let i = 0;
+      i <= bytes.length - marker.length;
+      i += 1
+    ) {
+      if (scanStart + i >= ownedEnd) {
+        break;
+      }
+
+      let match = true;
+
+      for (let j = 0; j < marker.length; j += 1) {
+        if (bytes[i + j] !== marker[j]) {
+          match = false;
+          break;
+        }
+      }
+
+      if (match) {
+        foundOffsets.push(scanStart + i);
+      }
+    }
+
+    scanStart = ownedEnd;
+  }
+
+  if (foundOffsets.length === 0) {
+    return {
+      blob: file,
+      removedCount: 0
+    };
+  }
+
+  // Replace the exact marker with same-length zero bytes.
+  const parts = [];
+  let copyFrom = 0;
+
+  const blank = new Uint8Array(marker.length);
+
+  for (const found of foundOffsets) {
+    parts.push(
+      file.slice(copyFrom, found),
+      blank
+    );
+
+    copyFrom = found + marker.length;
+  }
+
+  parts.push(file.slice(copyFrom));
+
+  return {
+    blob: new Blob(parts, {
+      type: 'video/mp4'
+    }),
+    removedCount: foundOffsets.length
+  };
 }
 
+/**
+ * Apply the CompressBase Quality + FPS patch.
+ *
+ * Output filename: neoncompress.mp4
+ *
+ * @param {File|Blob} file
+ * @param {(percent: number) => void} onProgress
+ * @param {string} mode
+ * @param {{
+ *   postingDevice?: string,
+ *   signal?: AbortSignal,
+ *   onStatus?: (message: string) => void
+ * }} options
+ * @returns {Promise<{blob: Blob, name: string}>}
+ */
 export async function optimizeVideo(
   file,
   onProgress = () => {},
@@ -330,10 +230,7 @@ export async function optimizeVideo(
     );
   }
 
-  if (
-    file.name &&
-    !/\.mp4$/i.test(file.name)
-  ) {
+  if (file.name && !/\.mp4$/i.test(file.name)) {
     throw new Error(
       'Please select an MP4 video.'
     );
@@ -345,9 +242,9 @@ export async function optimizeVideo(
     );
   }
 
-  if (file.size > MAX_FILE_SIZE) {
+  if (file.size > 8 * 1024 ** 3) {
     throw new Error(
-      'NEON COMPRESS supports MP4 files up to 8 GiB.'
+      'CompressBase supports MP4 files up to 8 GiB.'
     );
   }
 
@@ -363,18 +260,17 @@ export async function optimizeVideo(
     );
   }
 
-  throwIfAborted(signal);
+  signal?.throwIfAborted();
 
-  onProgress(3);
-  onStatus('Preparing video…');
+  onProgress(5);
+  onStatus(
+    'Preparing the MP4 for Quality + FPS…'
+  );
 
   try {
     const { patchVideo } = await getCompressBase();
 
-    throwIfAborted(signal);
-
-    onProgress(12);
-    onStatus('Applying video patch…');
+    signal?.throwIfAborted();
 
     const patchedBlob = await patchVideo(file, {
       postingDevice,
@@ -382,7 +278,7 @@ export async function optimizeVideo(
 
       onStatus: (message) => {
         onStatus(message);
-        onProgress(35);
+        onProgress(70);
       }
     });
 
@@ -391,80 +287,42 @@ export async function optimizeVideo(
       patchedBlob.size === 0
     ) {
       throw new Error(
-        'The patch processor returned an invalid video.'
+        'CompressBase returned an empty MP4.'
       );
     }
 
-    throwIfAborted(signal);
+    onStatus(
+      'Removing the CompressBase comment from MP4 metadata…'
+    );
 
-    onProgress(42);
-    onStatus('Checking patched MP4 metadata…');
+    onProgress(85);
 
-    let patchedDuration = null;
-
-    try {
-      patchedDuration = await getVideoDuration(
-        patchedBlob
-      );
-
-      onStatus(
-        `Detected duration: ${patchedDuration.toFixed(2)} seconds.`
-      );
-    } catch (error) {
-      console.warn(
-        '[NEON COMPRESS] Patched metadata check failed:',
-        error
-      );
-
-      onStatus(
-        'Metadata is unreadable; attempting container repair…'
-      );
-    }
-
-    throwIfAborted(signal);
-
-    onProgress(48);
-
-    const repairedBlob = await remuxMP4(
+    const {
+      blob: outputBlob,
+      removedCount
+    } = await removeCompressBaseComment(
       patchedBlob,
-      signal,
-      onStatus
+      signal
     );
 
-    throwIfAborted(signal);
-
-    onStatus('Verifying repaired MP4 duration…');
-
-    const repairedDuration = await getVideoDuration(
-      repairedBlob
-    );
-
-    if (
-      patchedDuration !== null &&
-      repairedDuration >
-        Math.max(
-          patchedDuration * 3,
-          patchedDuration + 10
-        )
-    ) {
-      throw new Error(
-        'The repaired duration does not match the patched video duration.'
-      );
-    }
+    signal?.throwIfAborted();
 
     onProgress(100);
 
     onStatus(
-      `Done. Repaired MP4 duration: ${repairedDuration.toFixed(2)} seconds.`
+      removedCount > 0
+        ? 'Done. CompressBase comment removed; video and FPS were not re-encoded.'
+        : 'Done. No CompressBase comment was found; video and FPS were not re-encoded.'
     );
 
     return {
-      blob: repairedBlob,
+      blob: outputBlob,
       name: 'neoncompress.mp4'
     };
+
   } catch (error) {
     console.error(
-      '[NEON COMPRESS] Processing failed:',
+      'NEON COMPRESS processing error:',
       error
     );
 
