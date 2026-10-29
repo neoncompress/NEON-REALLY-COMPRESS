@@ -56,7 +56,19 @@ async function getFFmpeg(onStatus = () => {}) {
       const coreURL = await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript');
       const wasmURL = await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm');
 
-      await ffmpeg.load({ coreURL, wasmURL });
+      const ffmpegBaseURL =
+  'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm';
+
+const classWorkerURL = await toBlobURL(
+  `${ffmpegBaseURL}/worker.js`,
+  'text/javascript'
+);
+
+await ffmpeg.load({
+  classWorkerURL,
+  coreURL,
+  wasmURL
+});
       return ffmpeg;
     })().catch((error) => {
       ffmpegInstancePromise = null;
