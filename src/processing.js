@@ -1,213 +1,488 @@
-// NEON COMPRESS V3 — FAST QUALITY + FPS PROCESSOR
-// Fast path: do not re-encode the video.
-// Original picture, audio and FPS remain unchanged.
-// CompressBase patches MP4 metadata/container locally.
-// Removes the exact "Patched by Compressbase" comment if present.
+// NEON COMPRESS V3
+// STANDALONE MP4 METADATA PROCESSOR
+//
+// CompressBase: NOT USED
+// External processing API: NOT USED
+// Video re-encoding: NOT USED
+//
+// Timing patch:
+//   60 FPS mode  -> divide mvhd/mdhd timescale and duration by 2
+//   120 FPS mode -> divide mvhd/mdhd timescale and duration by 4
+//
+// IMPORTANT:
+// This changes MP4 timing metadata only.
+// It does not convert the actual video to 60/120 FPS.
+// Keep the original video as a backup.
 //
 // Output filename: neoncompress.mp4
 
-let compressBaseModulePromise = null;
+const MAX_VIDEO_SIZE = 8 * 1024 ** 3;
 
-async function getCompressBase() {
-  if (!compressBaseModulePromise) {
-    compressBaseModulePromise = import(
-      /* @vite-ignore */ 'https://compressbase.com/method-api/client.mjs'
-    ).catch((error) => {
-      compressBaseModulePromise = null;
-      throw error;
-    });
+const CONTAINER_TYPES = new Set([
+  'moov',
+  'trak',
+  'mdia',
+  'edts',
+  'dinf',
+  'mvex',
+  'moof',
+  'traf',
+  'mfra'
+]);
+
+// --------------------------------------------------
+// ABORT CHECK
+// --------------------------------------------------
+
+function checkAbort(signal) {
+  if (signal?.aborted) {
+    throw new DOMException(
+      'Video processing was cancelled.',
+      'AbortError'
+    );
   }
-
-  return compressBaseModulePromise;
 }
 
-/**
- * Remove the exact CompressBase comment from the MP4 moov atom.
- *
- * @param {Blob} file
- * @param {AbortSignal} [signal]
- * @returns {Promise<{blob: Blob, removedCount: number}>}
- */
-export async function removeCompressBaseComment(file, signal) {
-  const marker = new TextEncoder().encode('Patched by Compressbase');
-  const chunkSize = 1024 * 1024;
+// --------------------------------------------------
+// READ MP4 BOX HEADER
+// --------------------------------------------------
 
-  let offset = 0;
-  let moovStart = -1;
-  let moovEnd = -1;
-  let moovHeaderSize = 8;
+async function readBox(
+  file,
+  position,
+  parentEnd,
+  signal
+) {
+  checkAbort(signal);
 
-  // Locate the MP4 moov atom.
-  while (offset + 8 <= file.size) {
-    signal?.throwIfAborted();
+  if (position + 8 > parentEnd) {
+    return null;
+  }
 
-    const headerBytes = new Uint8Array(
-      await file.slice(offset, offset + 16).arrayBuffer()
-    );
+  const bytes = new Uint8Array(
+    await file.slice(
+      position,
+      Math.min(position + 16, parentEnd)
+    ).arrayBuffer()
+  );
 
-    if (headerBytes.length < 8) {
-      break;
-    }
+  if (bytes.length < 8) {
+    return null;
+  }
 
-    const view = new DataView(
-      headerBytes.buffer,
-      headerBytes.byteOffset,
-      headerBytes.byteLength
-    );
+  const view = new DataView(
+    bytes.buffer,
+    bytes.byteOffset,
+    bytes.byteLength
+  );
 
-    let atomSize = view.getUint32(0);
+  let size = view.getUint32(0, false);
 
-    const atomType = String.fromCharCode(
-      headerBytes[4],
-      headerBytes[5],
-      headerBytes[6],
-      headerBytes[7]
-    );
+  const type = String.fromCharCode(
+    bytes[4],
+    bytes[5],
+    bytes[6],
+    bytes[7]
+  );
 
-    let headerSize = 8;
+  let headerSize = 8;
 
-    if (atomSize === 1) {
-      if (headerBytes.length < 16) {
-        throw new Error(
-          'The MP4 has an incomplete extended atom header.'
-        );
-      }
-
-      const extendedSize = view.getBigUint64(8);
-
-      if (extendedSize > BigInt(Number.MAX_SAFE_INTEGER)) {
-        throw new Error(
-          'The MP4 atom is too large for safe metadata editing.'
-        );
-      }
-
-      atomSize = Number(extendedSize);
-      headerSize = 16;
-    } else if (atomSize === 0) {
-      atomSize = file.size - offset;
-    }
-
-    if (
-      atomSize < headerSize ||
-      offset + atomSize > file.size
-    ) {
+  if (size === 1) {
+    if (bytes.length < 16) {
       throw new Error(
-        'The MP4 atom structure is invalid; metadata was not changed.'
+        'Invalid MP4: incomplete extended box header.'
       );
     }
 
-    if (atomType === 'moov') {
-      moovStart = offset;
-      moovEnd = offset + atomSize;
-      moovHeaderSize = headerSize;
-      break;
-    }
-
-    offset += atomSize;
-  }
-
-  if (moovStart < 0) {
-    throw new Error(
-      'Could not find the MP4 metadata atom (moov).'
-    );
-  }
-
-  // Search only inside moov.
-  const searchStart = moovStart + moovHeaderSize;
-  const foundOffsets = [];
-
-  let scanStart = searchStart;
-
-  while (scanStart < moovEnd) {
-    signal?.throwIfAborted();
-
-    const ownedEnd = Math.min(
-      scanStart + chunkSize,
-      moovEnd
+    const largeSize = view.getBigUint64(
+      8,
+      false
     );
 
-    const readEnd = Math.min(
-      ownedEnd + marker.length - 1,
-      moovEnd
-    );
-
-    const bytes = new Uint8Array(
-      await file.slice(scanStart, readEnd).arrayBuffer()
-    );
-
-    for (
-      let i = 0;
-      i <= bytes.length - marker.length;
-      i += 1
+    if (
+      largeSize >
+      BigInt(Number.MAX_SAFE_INTEGER)
     ) {
-      if (scanStart + i >= ownedEnd) {
-        break;
-      }
-
-      let match = true;
-
-      for (let j = 0; j < marker.length; j += 1) {
-        if (bytes[i + j] !== marker[j]) {
-          match = false;
-          break;
-        }
-      }
-
-      if (match) {
-        foundOffsets.push(scanStart + i);
-      }
+      throw new Error(
+        'MP4 box is too large to process safely.'
+      );
     }
 
-    scanStart = ownedEnd;
+    size = Number(largeSize);
+    headerSize = 16;
+
+  } else if (size === 0) {
+    size = parentEnd - position;
   }
 
-  if (foundOffsets.length === 0) {
-    return {
-      blob: file,
-      removedCount: 0
-    };
-  }
-
-  // Replace the exact marker with same-length zero bytes.
-  const parts = [];
-  let copyFrom = 0;
-
-  const blank = new Uint8Array(marker.length);
-
-  for (const found of foundOffsets) {
-    parts.push(
-      file.slice(copyFrom, found),
-      blank
+  if (
+    size < headerSize ||
+    position + size > parentEnd
+  ) {
+    throw new Error(
+      `Invalid MP4 box structure: ${type}`
     );
-
-    copyFrom = found + marker.length;
   }
-
-  parts.push(file.slice(copyFrom));
 
   return {
-    blob: new Blob(parts, {
-      type: 'video/mp4'
-    }),
-    removedCount: foundOffsets.length
+    type,
+    position,
+    size,
+    headerSize,
+    end: position + size
   };
 }
 
-/**
- * Apply the CompressBase Quality + FPS patch.
- *
- * Output filename: neoncompress.mp4
- *
- * @param {File|Blob} file
- * @param {(percent: number) => void} onProgress
- * @param {string} mode
- * @param {{
- *   postingDevice?: string,
- *   signal?: AbortSignal,
- *   onStatus?: (message: string) => void
- * }} options
- * @returns {Promise<{blob: Blob, name: string}>}
- */
+// --------------------------------------------------
+// CREATE BINARY REPLACEMENTS
+// --------------------------------------------------
+
+function uint32Bytes(value) {
+  const bytes = new Uint8Array(4);
+
+  new DataView(
+    bytes.buffer
+  ).setUint32(
+    0,
+    value,
+    false
+  );
+
+  return bytes;
+}
+
+function uint64Bytes(value) {
+  const bytes = new Uint8Array(8);
+
+  new DataView(
+    bytes.buffer
+  ).setBigUint64(
+    0,
+    value,
+    false
+  );
+
+  return bytes;
+}
+
+// --------------------------------------------------
+// PATCH mvhd / mdhd
+// --------------------------------------------------
+
+async function patchTimingHeader(
+  file,
+  box,
+  divider,
+  signal
+) {
+  checkAbort(signal);
+
+  const fullBoxPosition =
+    box.position + box.headerSize;
+
+  const readLength = Math.min(
+    32,
+    box.end - fullBoxPosition
+  );
+
+  if (readLength < 4) {
+    return [];
+  }
+
+  const bytes = new Uint8Array(
+    await file.slice(
+      fullBoxPosition,
+      fullBoxPosition + readLength
+    ).arrayBuffer()
+  );
+
+  const view = new DataView(
+    bytes.buffer,
+    bytes.byteOffset,
+    bytes.byteLength
+  );
+
+  const version = bytes[0];
+
+  if (version !== 0 && version !== 1) {
+    return [];
+  }
+
+  const wide = version === 1;
+
+  // FullBox version + flags = 4 bytes.
+  // Version 0 timestamps are 32-bit.
+  // Version 1 timestamps are 64-bit.
+  const timestampBytes = wide ? 16 : 8;
+
+  const timescaleOffset =
+    4 + timestampBytes;
+
+  const durationOffset =
+    timescaleOffset + 4;
+
+  const durationBytes = wide ? 8 : 4;
+
+  if (
+    durationOffset + durationBytes >
+    bytes.length
+  ) {
+    return [];
+  }
+
+  const timescalePosition =
+    fullBoxPosition + timescaleOffset;
+
+  const durationPosition =
+    fullBoxPosition + durationOffset;
+
+  const oldTimescale = view.getUint32(
+    timescaleOffset,
+    false
+  );
+
+  const oldDuration = wide
+    ? view.getBigUint64(
+        durationOffset,
+        false
+      )
+    : view.getUint32(
+        durationOffset,
+        false
+      );
+
+  const newTimescale = Math.max(
+    1,
+    Math.floor(oldTimescale / divider)
+  );
+
+  const newDuration = wide
+    ? oldDuration / BigInt(divider)
+    : Math.floor(oldDuration / divider);
+
+  return [
+    {
+      position: timescalePosition,
+      bytes: uint32Bytes(newTimescale)
+    },
+    {
+      position: durationPosition,
+      bytes: wide
+        ? uint64Bytes(newDuration)
+        : uint32Bytes(newDuration)
+    }
+  ];
+}
+
+// --------------------------------------------------
+// WALK MP4 BOX TREE
+// --------------------------------------------------
+
+async function walkBoxes(
+  file,
+  start,
+  end,
+  divider,
+  signal,
+  replacements,
+  patchedCounts,
+  state
+) {
+  let position = start;
+
+  while (position + 8 <= end) {
+    checkAbort(signal);
+
+    const box = await readBox(
+      file,
+      position,
+      end,
+      signal
+    );
+
+    if (!box) {
+      break;
+    }
+
+    state.boxesVisited += 1;
+
+    if (state.boxesVisited > 100000) {
+      throw new Error(
+        'MP4 contains too many boxes to process safely.'
+      );
+    }
+
+    if (
+      box.type === 'mvhd' ||
+      box.type === 'mdhd'
+    ) {
+      const changes = await patchTimingHeader(
+        file,
+        box,
+        divider,
+        signal
+      );
+
+      if (changes.length > 0) {
+        replacements.push(...changes);
+        patchedCounts[box.type] += 1;
+      }
+    }
+
+    if (CONTAINER_TYPES.has(box.type)) {
+      await walkBoxes(
+        file,
+        box.position + box.headerSize,
+        box.end,
+        divider,
+        signal,
+        replacements,
+        patchedCounts,
+        state
+      );
+    }
+
+    position = box.end;
+  }
+}
+
+// --------------------------------------------------
+// PUBLIC: PATCH MP4 TIMING METADATA
+//
+// fps = 60  -> divider 2
+// fps = 120 -> divider 4
+// --------------------------------------------------
+
+export async function patchMp4Timing(
+  file,
+  fps = 60,
+  signal
+) {
+  if (fps !== 60 && fps !== 120) {
+    throw new Error(
+      'FPS mode must be 60 or 120.'
+    );
+  }
+
+  if (
+    !file ||
+    typeof file.slice !== 'function' ||
+    typeof file.size !== 'number'
+  ) {
+    throw new Error(
+      'Please select a valid video file.'
+    );
+  }
+
+  if (file.size < 16) {
+    throw new Error(
+      'The selected file is empty or too small.'
+    );
+  }
+
+  if (file.size > MAX_VIDEO_SIZE) {
+    throw new Error(
+      'The selected video exceeds the 8 GiB limit.'
+    );
+  }
+
+  checkAbort(signal);
+
+  const divider = fps === 60 ? 2 : 4;
+
+  const replacements = [];
+
+  const patchedCounts = {
+    mvhd: 0,
+    mdhd: 0
+  };
+
+  const state = {
+    boxesVisited: 0
+  };
+
+  await walkBoxes(
+    file,
+    0,
+    file.size,
+    divider,
+    signal,
+    replacements,
+    patchedCounts,
+    state
+  );
+
+  checkAbort(signal);
+
+  if (
+    patchedCounts.mvhd +
+    patchedCounts.mdhd === 0
+  ) {
+    throw new Error(
+      'No supported mvhd/mdhd timing headers were found.'
+    );
+  }
+
+  // Sort replacements by their original byte offsets.
+  replacements.sort(
+    (a, b) => a.position - b.position
+  );
+
+  // Assemble a new Blob without overwriting the input.
+  const parts = [];
+
+  let copyFrom = 0;
+
+  for (const item of replacements) {
+    checkAbort(signal);
+
+    if (item.position < copyFrom) {
+      throw new Error(
+        'Overlapping MP4 metadata fields were detected.'
+      );
+    }
+
+    if (item.position > copyFrom) {
+      parts.push(
+        file.slice(
+          copyFrom,
+          item.position
+        )
+      );
+    }
+
+    parts.push(item.bytes);
+
+    copyFrom =
+      item.position + item.bytes.length;
+  }
+
+  if (copyFrom < file.size) {
+    parts.push(
+      file.slice(copyFrom)
+    );
+  }
+
+  const blob = new Blob(parts, {
+    type: 'video/mp4'
+  });
+
+  return {
+    blob,
+    fps,
+    divider,
+    patched: {
+      mvhd: patchedCounts.mvhd,
+      mdhd: patchedCounts.mdhd
+    }
+  };
+}
+
+// --------------------------------------------------
+// MAIN PROCESSING FUNCTION
+// Compatible with optimizeVideo(file, onProgress, mode, options)
+// --------------------------------------------------
+
 export async function optimizeVideo(
   file,
   onProgress = () => {},
@@ -215,9 +490,9 @@ export async function optimizeVideo(
   options = {}
 ) {
   const {
-    postingDevice = 'variant-1',
     signal,
-    onStatus = () => {}
+    onStatus = () => {},
+    timingPatchFps = 60
   } = options ?? {};
 
   if (
@@ -230,7 +505,10 @@ export async function optimizeVideo(
     );
   }
 
-  if (file.name && !/\.mp4$/i.test(file.name)) {
+  if (
+    file.name &&
+    !/\.mp4$/i.test(file.name)
+  ) {
     throw new Error(
       'Please select an MP4 video.'
     );
@@ -238,85 +516,52 @@ export async function optimizeVideo(
 
   if (file.size < 16) {
     throw new Error(
-      'The selected video file is too small or empty.'
+      'The selected video is too small or empty.'
     );
   }
 
-  if (file.size > 8 * 1024 ** 3) {
+  if (file.size > MAX_VIDEO_SIZE) {
     throw new Error(
-      'CompressBase supports MP4 files up to 8 GiB.'
+      'The selected video exceeds the 8 GiB limit.'
     );
   }
 
   if (
-    ![
-      'variant-1',
-      'variant-2',
-      'variant-3'
-    ].includes(postingDevice)
+    timingPatchFps !== 60 &&
+    timingPatchFps !== 120
   ) {
     throw new Error(
-      'Choose variant-1, variant-2, or variant-3.'
+      'timingPatchFps must be 60 or 120.'
     );
   }
 
-  signal?.throwIfAborted();
-
-  onProgress(5);
-  onStatus(
-    'Preparing the MP4 for Quality + FPS…'
-  );
+  checkAbort(signal);
 
   try {
-    const { patchVideo } = await getCompressBase();
-
-    signal?.throwIfAborted();
-
-    const patchedBlob = await patchVideo(file, {
-      postingDevice,
-      signal,
-
-      onStatus: (message) => {
-        onStatus(message);
-        onProgress(70);
-      }
-    });
-
-    if (
-      !(patchedBlob instanceof Blob) ||
-      patchedBlob.size === 0
-    ) {
-      throw new Error(
-        'CompressBase returned an empty MP4.'
-      );
-    }
+    onProgress(5);
 
     onStatus(
-      'Removing the CompressBase comment from MP4 metadata…'
+      'NEON COMPRESS: Reading MP4 metadata…'
     );
 
-    onProgress(85);
+    onProgress(15);
 
-    const {
-      blob: outputBlob,
-      removedCount
-    } = await removeCompressBaseComment(
-      patchedBlob,
+    const result = await patchMp4Timing(
+      file,
+      timingPatchFps,
       signal
     );
 
-    signal?.throwIfAborted();
+    checkAbort(signal);
 
     onProgress(100);
 
     onStatus(
-      removedCount > 0
-        ? 'Done. CompressBase comment removed; video and FPS were not re-encoded.'
-        : 'Done. No CompressBase comment was found; video and FPS were not re-encoded.'
+      `Finished. Updated ${result.patched.mvhd} mvhd and ${result.patched.mdhd} mdhd timing header(s).`
     );
 
     return {
-      blob: outputBlob,
+      blob: result.blob,
       name: 'neoncompress.mp4'
     };
 
@@ -328,4 +573,37 @@ export async function optimizeVideo(
 
     throw error;
   }
+}
+
+// --------------------------------------------------
+// DOWNLOAD HELPER
+// Optional: call this if your existing UI needs it.
+// --------------------------------------------------
+
+export function downloadProcessedVideo(
+  blob,
+  filename = 'neoncompress.mp4'
+) {
+  if (!(blob instanceof Blob)) {
+    throw new Error(
+      'A valid processed video Blob is required.'
+    );
+  }
+
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement('a');
+
+  link.href = url;
+  link.download = filename;
+  link.style.display = 'none';
+
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  // Delay revocation to allow the browser to start the download.
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 30000);
 }
