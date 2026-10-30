@@ -283,7 +283,6 @@ export async function optimizeVideo(
   // Match the public method: scale movie timing and the video track timing.
   // Audio track timing and compressed video/audio packets remain untouched.
   divideTimingFields(moovBytes, mvhd, divider);
-  divideTimingFields(moovBytes, videoTrack.mdhd, divider);
 
   abortIfNeeded(signal);
   const patchedMoov = new Blob([moovBytes], { type: 'video/mp4' });
