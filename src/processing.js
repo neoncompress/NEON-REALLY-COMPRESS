@@ -1,14 +1,14 @@
-// Processing.js
+// Processing.js 1080p 30fps
 // NEON COMPRESS V3 — experimental MP4 timing-header patch
 //
 // Drop-in replacement for the attached optimizeVideo() interface.
-// It does NOT re-encode video or audio. It changes the MP4 movie-level mvhd
-// timing field only. It leaves the video track's mdhd/stts timing unchanged, so a 60fps
-// source continues to be identified as 60fps by normal MP4 readers. TikTok may
-// still transcode the upload; this does not guarantee the posted FPS or quality.
+// It does NOT re-encode video or audio. It changes MP4 mvhd/mdhd timing fields
+// only, using the public 60/120 FPS patch approach. The video payload stays the
+// same. TikTok may still transcode the upload, and this does not guarantee a
+// particular resolution/FPS or improved quality.
 //
-// The experimental movie-header patch is limited to constant 60fps or 120fps
-// MP4 video. Video/audio packets and audio timing are left unchanged.
+// The patch is limited to constant 60fps or 120fps MP4 video. Audio mdhd timing
+// is deliberately left unchanged to avoid damaging audio playback.
 //
 // Output filename: neoncompress.mp4
 
@@ -276,9 +276,14 @@ export async function optimizeVideo(
   }
   const divider = roundedFps === 60 ? 2 : 4;
 
-// Movie header болон video track-ийн timing metadata-г patch လုပ်သည်။
-divideTimingFields(moovBytes, mvhd, divider);
-divideTimingFields(moovBytes, videoTrack.mdhd, divider);
+  onProgress(35);
+  onStatus(`Patching ${roundedFps}fps MP4 timing headers without re-encoding…`);
+  abortIfNeeded(signal);
+
+  // Match the public method: scale movie timing and the video track timing.
+  // Audio track timing and compressed video/audio packets remain untouched.
+  divideTimingFields(moovBytes, mvhd, divider);
+  divideTimingFields(moovBytes, videoTrack.mdhd, divider);
 
   abortIfNeeded(signal);
   const patchedMoov = new Blob([moovBytes], { type: 'video/mp4' });
@@ -289,7 +294,7 @@ divideTimingFields(moovBytes, videoTrack.mdhd, divider);
   ], { type: 'video/mp4' });
 
   onProgress(100);
-  onStatus(`Done. Movie metadata patched; the ${roundedFps}fps video track and media payload were not changed.`);
+  onStatus(`Done. MP4 timing headers patched for source ${roundedFps}fps; media payload was not re-encoded.`);
 
   return {
     blob: outputBlob,
