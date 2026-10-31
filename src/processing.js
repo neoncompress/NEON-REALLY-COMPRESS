@@ -271,7 +271,18 @@ export async function optimizeVideo(
 
   const videoTrack = videoTracks[0];
   const roundedFps = Math.round(videoTrack.fps);
-  if (!videoTrack.constantDelta || ![60, 120].includes(roundedFps) || Math.abs(videoTrack.fps - roundedFps) > 0.5) {
+  const roundedFps = Math.round(videoTrack.fps);
+const fpsTolerance = 0.5;
+
+if (
+  !videoTrack.constantFrameInterval ||
+  ![60, 120].includes(roundedFps) ||
+  Math.abs(videoTrack.fps - roundedFps) > fpsTolerance
+) {
+  throw new Error(
+    `Unsupported video timing: ${videoTrack.fps.toFixed(3)}fps; constant=${videoTrack.constantFrameInterval}.`
+  );
+} {
     throw new Error(`Only constant 60fps or 120fps video is supported (detected about ${videoTrack.fps.toFixed(3)}fps).`);
   }
   const divider = roundedFps === 60 ? 2 : 4;
