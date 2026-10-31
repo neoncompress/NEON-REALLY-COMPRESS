@@ -370,7 +370,7 @@ export async function optimizeVideo(
   if (
     !videoTrack.constantFrameInterval ||
     ![60, 120].includes(roundedFps) ||
-    Math.abs(videoTrack.fps - roundedFps) > 0.05
+    Math.abs(videoTrack.fps - roundedFps) > 0.25
   ) {
     throw new Error(
       `Only constant 60fps or 120fps video is supported; detected about ${videoTrack.fps.toFixed(3)}fps.`
