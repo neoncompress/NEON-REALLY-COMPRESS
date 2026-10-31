@@ -74,14 +74,28 @@ main{
   letter-spacing:.12em
 }
 
+/* Updated NEON Logo */
 .mark{
-  width:37px;
-  height:37px;
-  border-radius:12px;
-  background:linear-gradient(145deg,#ff6074,#b70929);
+  width:42px;
+  height:42px;
+  flex:0 0 42px;
   display:grid;
   place-items:center;
-  box-shadow:0 0 25px #ff24475e
+  background:transparent;
+  border:none;
+  box-shadow:none;
+  overflow:visible
+}
+
+.mark img{
+  display:block;
+  width:100%;
+  height:100%;
+  object-fit:contain;
+  filter:
+    drop-shadow(0 0 4px rgba(255,51,78,.85))
+    drop-shadow(0 0 10px rgba(255,24,48,.8))
+    drop-shadow(0 0 20px rgba(255,24,48,.45))
 }
 
 .tag{
@@ -903,7 +917,9 @@ video{
 
 <header class="top">
   <div class="brand">
-    <span class="mark">✦</span>
+    <span class="mark">
+      <img src="./assets/logo.png" alt="NEON COMPRESS Logo">
+    </span>
     NEON COMPRESS
   </div>
 
@@ -919,7 +935,6 @@ video{
   <h1><span>QUALITY</span><br>COMPRESS</h1>
   <p>Premium video optimization · NEON REALLY COMPRESS</p>
 
-  <!-- Compact Daily Limit bar below the main title -->
   <div class="daily-limit-bar" aria-label="Daily limit">
     <strong class="daily-limit-title">DAILY LIMIT</strong>
     <span class="daily-remaining">
