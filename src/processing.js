@@ -662,16 +662,15 @@ export async function optimizeVideo(
   // Require constant frame timing and a source FPS
   // sufficiently close to either 60 or 120.
   if (
-    !videoTrack.constantDelta ||
-    ![60, 120].includes(roundedFps) ||
-    Math.abs(
-      videoTrack.fps - roundedFps
-    ) > fpsTolerance
-  ) {
-    throw new Error(
-      `Unsupported video timing: ${videoTrack.fps.toFixed(3)}fps; constant=${videoTrack.constantDelta}. This experimental patch supports constant 60fps or 120fps MP4 video only.`
-    );
-  }
+  ![60, 120].includes(roundedFps) ||
+  Math.abs(
+    videoTrack.fps - roundedFps
+  ) > fpsTolerance
+) {
+  throw new Error(
+    `Unsupported video FPS: ${videoTrack.fps.toFixed(3)}fps. This experimental patch supports video averaging close to 60fps or 120fps only.`
+  );
+}
 
   const divider =
     roundedFps === 60 ? 2 : 4;
