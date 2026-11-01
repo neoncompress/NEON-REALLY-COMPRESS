@@ -110,6 +110,14 @@ async function refresh() {
 }
 
 async function showAccount() {
+  const adminLink = el('adminDashboardLink');
+
+  // The dashboard link is visible only to an authenticated admin account.
+  if (adminLink) {
+    adminLink.hidden = true;
+    adminLink.style.display = 'none';
+  }
+
   if (!token()) {
     el('neonAccount').textContent = 'Not logged in';
     return;
@@ -120,6 +128,11 @@ async function showAccount() {
 
     el('neonAccount').textContent =
       `${u.email} • ${u.points} points`;
+
+    if (adminLink && u.role === 'admin') {
+      adminLink.hidden = false;
+      adminLink.style.display = 'inline-block';
+    }
 
   } catch {
     localStorage.removeItem(key);
