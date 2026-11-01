@@ -752,7 +752,7 @@ video{
   padding:8px 0
 }
 
-/* NEON CUSTOM DROPDOWN */
+/* NEON CUSTOM DROPDOWN (Fixed z-index stacking order) */
 .neon-select-native{
   position:absolute!important;
   width:1px!important;
@@ -771,7 +771,7 @@ video{
   position:relative;
   width:100%;
   margin-top:7px;
-  z-index:20;
+  z-index: 50;
 }
 
 .neon-dropdown-trigger{
@@ -819,7 +819,7 @@ video{
   border-radius:13px;
   background:#160a10;
   box-shadow:0 15px 35px #000b,0 0 20px #ff334e18;
-  z-index:100;
+  z-index: 9999;
 }
 
 .neon-dropdown.open .neon-dropdown-menu{
@@ -870,6 +870,10 @@ video{
   .brand{font-size:12px}
   .unlimited-modal{padding:20px 14px}
   .modal-section{padding:13px}
+}
+
+@media(max-width:380px){
+  .access-options{grid-template-columns:1fr}
 }
 
 @media(prefers-reduced-motion:reduce){
