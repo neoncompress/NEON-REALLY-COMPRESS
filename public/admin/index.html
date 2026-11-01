@@ -276,6 +276,53 @@ async function apiPush(method,body){
 
 $('enablePush').onclick = enableAdminPush;
 
+// Restore the admin device subscription automatically when the admin page opens.
+// If the browser still has the subscription, this refreshes the server copy.
+// If Cleaner removed it but notification permission remains granted, try to
+// create a replacement. Some browsers require a tap, so the button remains
+// available as a fallback.
+async function restoreAdminPush(){
+  if(!('serviceWorker' in navigator) || !('PushManager' in window) ||
+     !('Notification' in window) || !window.isSecureContext ||
+     Notification.permission !== 'granted' ||
+     !localStorage.getItem('neon_access_token')) return;
+
+  try{
+    const keyResponse = await apiPush('GET');
+    const registration = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+
+    let subscription = await registration.pushManager.getSubscription();
+
+    if(!subscription){
+      try{
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly:true,
+          applicationServerKey:urlBase64ToUint8Array(keyResponse.publicKey)
+        });
+      }catch(error){
+        // Browser may require a user gesture after local subscription data
+        // has been cleared. Keep the manual enable button as the fallback.
+        $('enablePush').textContent = '🔔 RE-ENABLE ADMIN PHONE NOTIFICATIONS';
+        return;
+      }
+    }
+
+    await apiPush('POST',{subscription:subscription.toJSON()});
+    $('enablePush').textContent = '✅ ADMIN NOTIFICATIONS ENABLED';
+  }catch(error){
+    console.warn('Could not restore admin push subscription:', error);
+    $('enablePush').textContent = '🔔 ENABLE ADMIN PHONE NOTIFICATIONS';
+  }
+}
+
+// Run on initial load and whenever the admin returns to the page.
+restoreAdminPush();
+window.addEventListener('pageshow', restoreAdminPush);
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState === 'visible') restoreAdminPush();
+});
+
 // Keep the pending list fresh without requiring the manual Load button.
 setInterval(()=>{
   if(document.visibilityState === 'visible' &&
