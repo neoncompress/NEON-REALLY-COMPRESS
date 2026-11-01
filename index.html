@@ -697,67 +697,6 @@ video{
   line-height:1.65
 }
 
-/* NEW ACCESS MODE CARDS */
-.access-options{
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:10px;
-  margin-top:12px
-}
-
-.access-option{
-  position:relative;
-  display:block;
-  width:100%;
-  min-width:0;
-  padding:17px 12px;
-  border:1px solid #ff7c9050;
-  border-radius:15px;
-  background:linear-gradient(145deg,#35111d,#180b11);
-  color:#fff;
-  text-align:left;
-  transition:
-    transform .22s ease,
-    border-color .25s ease,
-    background .25s ease,
-    box-shadow .25s ease;
-  overflow:hidden
-}
-
-.access-option:active{
-  transform:scale(.97)
-}
-
-.access-option.active{
-  border-color:#ff536c;
-  background:linear-gradient(145deg,#641629,#270d17);
-  box-shadow:0 0 18px #ff334e30
-}
-
-.access-option .mode-icon{
-  display:block;
-  font-size:25px;
-  margin-bottom:10px
-}
-
-.access-option strong{
-  display:block;
-  font-size:13px;
-  margin-bottom:7px
-}
-
-.access-option small{
-  display:block;
-  color:#d8b8c0;
-  font-size:10px;
-  line-height:1.5
-}
-
-.access-option:focus-visible{
-  outline:2px solid #ff879a;
-  outline-offset:3px
-}
-
 /* Slide-down details */
 .mode-details{
   display:grid;
@@ -813,15 +752,124 @@ video{
   padding:8px 0
 }
 
+/* NEON CUSTOM DROPDOWN */
+.neon-select-native{
+  position:absolute!important;
+  width:1px!important;
+  height:1px!important;
+  padding:0!important;
+  margin:-1px!important;
+  overflow:hidden!important;
+  clip:rect(0,0,0,0)!important;
+  white-space:nowrap!important;
+  border:0!important;
+  opacity:0!important;
+  pointer-events:none!important;
+}
+
+.neon-dropdown{
+  position:relative;
+  width:100%;
+  margin-top:7px;
+  z-index:20;
+}
+
+.neon-dropdown-trigger{
+  width:100%;
+  min-height:48px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:13px 15px;
+  border:1px solid #ff536c80;
+  border-radius:12px;
+  background:linear-gradient(135deg,#29101a,#14090f);
+  color:#fff;
+  text-align:left;
+  font-size:13px;
+  font-weight:800;
+  box-shadow:0 5px 18px #0004;
+}
+
+.neon-dropdown-trigger:focus-visible{
+  outline:2px solid #ff879a;
+  outline-offset:3px;
+}
+
+.neon-dropdown-arrow{
+  color:#ff8296;
+  transition:transform .2s ease;
+}
+
+.neon-dropdown.open .neon-dropdown-arrow{
+  transform:rotate(180deg);
+}
+
+.neon-dropdown-menu{
+  position:absolute;
+  top:calc(100% + 7px);
+  left:0;
+  right:0;
+  display:none;
+  max-height:220px;
+  overflow-y:auto;
+  padding:6px;
+  border:1px solid #ff536c80;
+  border-radius:13px;
+  background:#160a10;
+  box-shadow:0 15px 35px #000b,0 0 20px #ff334e18;
+  z-index:100;
+}
+
+.neon-dropdown.open .neon-dropdown-menu{
+  display:block;
+  animation:neonMenuIn .18s ease;
+}
+
+@keyframes neonMenuIn{
+  from{opacity:0;transform:translateY(-5px)}
+  to{opacity:1;transform:translateY(0)}
+}
+
+.neon-dropdown-option{
+  display:block;
+  width:100%;
+  padding:12px;
+  border:0;
+  border-radius:8px;
+  background:transparent;
+  color:#f7dce2;
+  text-align:left;
+  font-size:12px;
+  font-weight:700;
+}
+
+.neon-dropdown-option:hover,
+.neon-dropdown-option:focus-visible{
+  background:#ff334e20;
+  color:#fff;
+  outline:none;
+}
+
+.neon-dropdown-option.selected{
+  background:linear-gradient(100deg,#6a1429,#35101d);
+  color:#ffb5c1;
+}
+
+.neon-dropdown-option:disabled{
+  opacity:.45;
+}
+
+.access-mode-dropdown{
+  margin-top:12px;
+}
+
 @media(max-width:500px){
   .top{flex-wrap:wrap}
   .brand{font-size:12px}
   .unlimited-modal{padding:20px 14px}
   .modal-section{padding:13px}
-}
-
-@media(max-width:380px){
-  .access-options{grid-template-columns:1fr}
 }
 
 @media(prefers-reduced-motion:reduce){
@@ -1222,7 +1270,7 @@ video{
       </div>
     </div>
 
-    <!-- ACCESS MODE: animated cards -->
+    <!-- ACCESS MODE: NEON CUSTOM DROPDOWN -->
     <div class="modal-section">
       <h3>ACCESS MODE</h3>
 
@@ -1230,26 +1278,40 @@ video{
         Choose how to process your video.
       </p>
 
-      <div class="access-options">
+      <input type="hidden" id="neonMode" value="free">
 
-        <button class="access-option active"
-          id="freeModeBtn" type="button"
-          aria-pressed="true">
+      <div class="neon-dropdown access-mode-dropdown"
+           id="accessModeDropdown">
 
-          <span class="mode-icon">🆓</span>
-          <strong>DAILY LIMIT</strong>
-          <small>Use your daily free quota.</small>
+        <button class="neon-dropdown-trigger"
+                id="accessModeTrigger"
+                type="button"
+                aria-haspopup="listbox"
+                aria-expanded="false">
+
+          <span id="accessModeValue">🆓 DAILY LIMIT</span>
+          <span class="neon-dropdown-arrow">▼</span>
         </button>
 
-        <button class="access-option"
-          id="pointsModeBtn" type="button"
-          aria-pressed="false">
+        <div class="neon-dropdown-menu" role="listbox">
 
-          <span class="mode-icon">💎</span>
-          <strong>PAID POINTS</strong>
-          <small>Use points to process videos.</small>
-        </button>
+          <button class="neon-dropdown-option selected"
+                  type="button"
+                  data-mode="free"
+                  role="option"
+                  aria-selected="true">
+            🆓 DAILY LIMIT
+          </button>
 
+          <button class="neon-dropdown-option"
+                  type="button"
+                  data-mode="points"
+                  role="option"
+                  aria-selected="false">
+            💎 PAID POINTS
+          </button>
+
+        </div>
       </div>
 
       <div class="mode-details open" id="freeModeDetails">
@@ -1275,41 +1337,89 @@ video{
           </div>
         </div>
       </div>
-
-      <!-- Keep the original ID and value for src/access.js -->
-      <input type="hidden" id="neonMode" value="free">
     </div>
 
     <div class="modal-section">
       <h3>BUY POINTS</h3>
 
       <div class="pay-grid">
-        <label for="neonPackage">
+
+        <label class="pay-field">
           Point package
-          <select id="neonPackage"></select>
+
+          <select id="neonPackage"
+                  class="neon-select-native"
+                  aria-label="Point package">
+          </select>
+
+          <div class="neon-dropdown" id="neonPackageDropdown">
+
+            <button class="neon-dropdown-trigger"
+                    type="button"
+                    aria-haspopup="listbox"
+                    aria-expanded="false">
+
+              <span class="neon-dropdown-value">
+                Loading packages...
+              </span>
+
+              <span class="neon-dropdown-arrow">▼</span>
+            </button>
+
+            <div class="neon-dropdown-menu" role="listbox"></div>
+
+          </div>
         </label>
 
-        <label for="neonMethod">
+        <label class="pay-field">
           Payment method
-          <select id="neonMethod"></select>
+
+          <select id="neonMethod"
+                  class="neon-select-native"
+                  aria-label="Payment method">
+          </select>
+
+          <div class="neon-dropdown" id="neonMethodDropdown">
+
+            <button class="neon-dropdown-trigger"
+                    type="button"
+                    aria-haspopup="listbox"
+                    aria-expanded="false">
+
+              <span class="neon-dropdown-value">
+                Loading payment methods...
+              </span>
+
+              <span class="neon-dropdown-arrow">▼</span>
+            </button>
+
+            <div class="neon-dropdown-menu" role="listbox"></div>
+
+          </div>
         </label>
 
         <label for="neonReference">
           Payment transaction reference
-          <input id="neonReference" placeholder="Transaction ID">
+          <input id="neonReference"
+                 placeholder="Transaction ID">
         </label>
 
-        <button class="btn secondary" id="neonPay" type="button">
+        <button class="btn secondary"
+                id="neonPay"
+                type="button">
           SUBMIT PAYMENT FOR REVIEW
         </button>
 
-        <p id="neonPaymentInfo" class="pay-help" aria-live="polite"></p>
+        <p id="neonPaymentInfo"
+           class="pay-help"
+           aria-live="polite"></p>
+
       </div>
     </div>
   </div>
 </div>
 
-<!-- Modal controls -->
+<!-- Modal controls & Access Mode Custom Dropdown Logic -->
 <script>
 (() => {
   'use strict';
@@ -1320,36 +1430,62 @@ video{
   const welcome = document.getElementById('welcome');
   const continueButton = document.getElementById('continue');
 
-  /* ACCESS MODE SELECTION */
-  const freeModeBtn = document.getElementById('freeModeBtn');
-  const pointsModeBtn = document.getElementById('pointsModeBtn');
-
-  const freeModeDetails = document.getElementById('freeModeDetails');
-  const pointsModeDetails = document.getElementById('pointsModeDetails');
-
   const neonMode = document.getElementById('neonMode');
+
+  const accessDropdown =
+    document.getElementById('accessModeDropdown');
+
+  const accessTrigger =
+    document.getElementById('accessModeTrigger');
+
+  const accessValue =
+    document.getElementById('accessModeValue');
+
+  const freeModeDetails =
+    document.getElementById('freeModeDetails');
+
+  const pointsModeDetails =
+    document.getElementById('pointsModeDetails');
 
   function selectAccessMode(mode) {
     const isFree = mode === 'free';
 
     neonMode.value = mode;
 
-    freeModeBtn.classList.toggle('active', isFree);
-    pointsModeBtn.classList.toggle('active', !isFree);
+    accessValue.textContent =
+      isFree ? '🆓 DAILY LIMIT' : '💎 PAID POINTS';
 
-    freeModeBtn.setAttribute('aria-pressed', String(isFree));
-    pointsModeBtn.setAttribute('aria-pressed', String(!isFree));
+    accessDropdown.querySelectorAll('[data-mode]').forEach(option => {
+      const selected = option.dataset.mode === mode;
+
+      option.classList.toggle('selected', selected);
+
+      option.setAttribute(
+        'aria-selected',
+        String(selected)
+      );
+    });
 
     freeModeDetails.classList.toggle('open', isFree);
     pointsModeDetails.classList.toggle('open', !isFree);
+
+    accessDropdown.classList.remove('open');
+    accessTrigger.setAttribute('aria-expanded', 'false');
   }
 
-  freeModeBtn.addEventListener('click', () => {
-    selectAccessMode('free');
+  accessTrigger.addEventListener('click', () => {
+    const isOpen = accessDropdown.classList.toggle('open');
+
+    accessTrigger.setAttribute(
+      'aria-expanded',
+      String(isOpen)
+    );
   });
 
-  pointsModeBtn.addEventListener('click', () => {
-    selectAccessMode('points');
+  accessDropdown.querySelectorAll('[data-mode]').forEach(option => {
+    option.addEventListener('click', () => {
+      selectAccessMode(option.dataset.mode);
+    });
   });
 
   function openUnlimited() {
@@ -1374,10 +1510,24 @@ video{
   });
 
   document.addEventListener('keydown', event => {
-    if (
-      event.key === 'Escape' &&
-      !unlimitedModal.classList.contains('hidden')
-    ) {
+    if (event.key !== 'Escape') return;
+
+    const openedDropdown =
+      document.querySelector('.neon-dropdown.open');
+
+    if (openedDropdown) {
+      openedDropdown.classList.remove('open');
+
+      openedDropdown
+        .querySelector('.neon-dropdown-trigger')
+        ?.setAttribute('aria-expanded', 'false');
+
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    if (!unlimitedModal.classList.contains('hidden')) {
       event.preventDefault();
       event.stopPropagation();
     }
@@ -1391,6 +1541,7 @@ video{
   if (sessionStorage.getItem('neon-welcomed') === '1') {
     welcome.classList.add('hidden');
   }
+
 })();
 </script>
 
@@ -1898,6 +2049,134 @@ if (!reduced) {
     burst(e.clientX, e.clientY, true);
   }, {passive:true,capture:true});
 }
+
+})();
+</script>
+
+<!-- Buy Points & Payment Methods Native Dropdown Synchronization Script -->
+<script>
+(() => {
+  'use strict';
+
+  function setupNativeDropdown(selectId, dropdownId, emptyText) {
+    const select = document.getElementById(selectId);
+    const dropdown = document.getElementById(dropdownId);
+
+    if (!select || !dropdown) return;
+
+    const trigger = dropdown.querySelector('.neon-dropdown-trigger');
+    const value = dropdown.querySelector('.neon-dropdown-value');
+    const menu = dropdown.querySelector('.neon-dropdown-menu');
+
+    function render() {
+      const options = [...select.options];
+      const selected = select.selectedOptions[0];
+
+      value.textContent = selected
+        ? selected.textContent
+        : options.length
+          ? 'Choose...'
+          : emptyText;
+
+      trigger.disabled = options.length === 0;
+
+      menu.replaceChildren();
+
+      if (!options.length) {
+        const message = document.createElement('div');
+
+        message.className = 'neon-dropdown-option';
+        message.textContent = emptyText;
+
+        menu.appendChild(message);
+        return;
+      }
+
+      options.forEach((option, index) => {
+        const button = document.createElement('button');
+
+        button.type = 'button';
+        button.className = 'neon-dropdown-option';
+        button.textContent = option.textContent;
+        button.disabled = option.disabled;
+
+        button.classList.toggle(
+          'selected',
+          option.selected
+        );
+
+        button.setAttribute('role', 'option');
+
+        button.setAttribute(
+          'aria-selected',
+          String(option.selected)
+        );
+
+        button.addEventListener('click', () => {
+          select.selectedIndex = index;
+
+          select.dispatchEvent(
+            new Event('change', { bubbles: true })
+          );
+
+          dropdown.classList.remove('open');
+
+          trigger.setAttribute('aria-expanded', 'false');
+
+          render();
+        });
+
+        menu.appendChild(button);
+      });
+    }
+
+    trigger.addEventListener('click', () => {
+      const isOpen = dropdown.classList.toggle('open');
+
+      trigger.setAttribute(
+        'aria-expanded',
+        String(isOpen)
+      );
+    });
+
+    select.addEventListener('change', render);
+
+    const observer = new MutationObserver(render);
+
+    observer.observe(select, {
+      childList: true,
+      subtree: true,
+      attributes: true
+    });
+
+    render();
+  }
+
+  setupNativeDropdown(
+    'neonPackage',
+    'neonPackageDropdown',
+    'No point packages available'
+  );
+
+  setupNativeDropdown(
+    'neonMethod',
+    'neonMethodDropdown',
+    'No payment methods available'
+  );
+
+  document.addEventListener('click', event => {
+    document.querySelectorAll('.neon-dropdown.open')
+      .forEach(dropdown => {
+
+        if (!dropdown.contains(event.target)) {
+          dropdown.classList.remove('open');
+
+          dropdown
+            .querySelector('.neon-dropdown-trigger')
+            ?.setAttribute('aria-expanded', 'false');
+        }
+      });
+  });
 
 })();
 </script>
