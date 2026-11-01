@@ -602,7 +602,8 @@ video{
   padding:16px;
   border:1px solid #ff7c9038;
   border-radius:17px;
-  background:#10070a75
+  background:#10070a75;
+  position: relative; /* Stacking context ထိန်းရန် */
 }
 
 .modal-section h3{
@@ -668,12 +669,26 @@ video{
 .pay-grid{
   display:grid;
   gap:10px;
-  margin:12px 0
+  margin:12px 0;
+  position: relative;
+  z-index: 1;
 }
 
 .pay-grid label{
   font-size:12px;
-  color:#eed5dc
+  color:#eed5dc;
+  position: relative;
+}
+
+/* Fix Z-Index layering for Point Package vs Payment Method */
+.pay-field:nth-child(1) {
+  z-index: 50;
+  position: relative;
+}
+
+.pay-field:nth-child(2) {
+  z-index: 10;
+  position: relative;
 }
 
 .pay-grid input{
@@ -695,7 +710,7 @@ video{
   line-height:1.65
 }
 
-/* NEON CUSTOM DROPDOWN (Fixed z-index layering) */
+/* NEON CUSTOM DROPDOWN */
 .neon-select-native{
   position:absolute!important;
   width:1px!important;
@@ -714,7 +729,14 @@ video{
   position:relative;
   width:100%;
   margin-top:7px;
-  z-index: 50;
+}
+
+#neonPackageDropdown {
+  z-index: 99999 !important; /* Point package dropdown ကို အပေါ်ဆုံးသို့ ပို့ပေးသည် */
+}
+
+#neonMethodDropdown {
+  z-index: 1000 !important;
 }
 
 .neon-dropdown-trigger{
@@ -762,12 +784,18 @@ video{
   border-radius:13px;
   background:#160a10;
   box-shadow:0 15px 35px #000b,0 0 20px #ff334e18;
-  z-index: 9999;
 }
 
-.neon-dropdown.open .neon-dropdown-menu{
-  display:block;
-  animation:neonMenuIn .18s ease;
+#neonPackageDropdown.open .neon-dropdown-menu {
+  display: block;
+  animation: neonMenuIn .18s ease;
+  z-index: 99999 !important;
+}
+
+#neonMethodDropdown.open .neon-dropdown-menu {
+  display: block;
+  animation: neonMenuIn .18s ease;
+  z-index: 50000 !important;
 }
 
 @keyframes neonMenuIn{
