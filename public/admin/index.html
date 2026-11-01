@@ -85,6 +85,7 @@ pre{
 <p>Log in from the main website with the configured ADMIN_EMAIL account, then open this page.</p>
 
 <button id="load">LOAD ADMIN DATA</button>
+<button id="enablePush" type="button">🔔 ENABLE ADMIN PHONE NOTIFICATIONS</button>
 <p id="msg" role="status" aria-live="polite"></p>
 
 <section>
@@ -212,6 +213,80 @@ async function load(){
     $('load').disabled = false;
   }
 }
+
+
+async function enableAdminPush(){
+  const button = $('enablePush');
+  button.disabled = true;
+  try{
+    if(!('serviceWorker' in navigator) || !('PushManager' in window)){
+      throw new Error('This browser does not support Web Push. Try installing/opening the site in Chrome or Edge on Android.');
+    }
+    if(!window.isSecureContext){
+      throw new Error('Push notifications require the HTTPS Vercel website.');
+    }
+    const permission = await Notification.requestPermission();
+    if(permission !== 'granted'){
+      throw new Error('Notification permission was not granted. Allow notifications for this website in browser settings.');
+    }
+
+    const keyResponse = await apiPush('GET');
+    const registration = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+
+    let subscription = await registration.pushManager.getSubscription();
+    if(!subscription){
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly:true,
+        applicationServerKey:urlBase64ToUint8Array(keyResponse.publicKey)
+      });
+    }
+
+    await apiPush('POST',{subscription:subscription.toJSON()});
+    button.textContent = '✅ ADMIN NOTIFICATIONS ENABLED';
+    $('msg').textContent = 'Admin phone notifications are enabled on this device.';
+  }catch(error){
+    $('msg').textContent = error.message || 'Could not enable notifications.';
+  }finally{
+    button.disabled = false;
+  }
+}
+
+function urlBase64ToUint8Array(value){
+  const padding = '='.repeat((4 - value.length % 4) % 4);
+  const base64 = (value + padding).replace(/-/g,'+').replace(/_/g,'/');
+  const raw = atob(base64);
+  return Uint8Array.from(raw, char => char.charCodeAt(0));
+}
+
+async function apiPush(method,body){
+  const token = localStorage.getItem('neon_access_token');
+  const response = await fetch('/api/push',{
+    method,
+    headers:{
+      'Content-Type':'application/json',
+      Authorization:'Bearer ' + (token || '')
+    },
+    body:body ? JSON.stringify(body) : undefined
+  });
+  const data = await response.json();
+  if(!response.ok) throw new Error(data.error || 'Push setup failed');
+  return data;
+}
+
+$('enablePush').onclick = enableAdminPush;
+
+// Keep the pending list fresh without requiring the manual Load button.
+setInterval(()=>{
+  if(document.visibilityState === 'visible' &&
+     localStorage.getItem('neon_access_token')){
+    load();
+  }
+},30000);
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState === 'visible' &&
+     localStorage.getItem('neon_access_token')) load();
+});
 
 $('load').onclick = load;
 
