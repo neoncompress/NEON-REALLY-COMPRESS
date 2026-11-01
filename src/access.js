@@ -97,7 +97,12 @@ async function refresh() {
         })
     );
 
+    // Refresh the custom dark dropdown menus.
+    window.neonDropdowns?.package?.render();
+    window.neonDropdowns?.method?.render();
+
     await showAccount();
+
   } catch (e) {
     el('quotaStatus').textContent = 'Backend not connected';
     el('neonPaymentInfo').textContent = e.message;
@@ -115,6 +120,7 @@ async function showAccount() {
 
     el('neonAccount').textContent =
       `${u.email} • ${u.points} points`;
+
   } catch {
     localStorage.removeItem(key);
     el('neonAccount').textContent = 'Please log in again';
@@ -138,6 +144,7 @@ for (const action of ['register', 'login']) {
 
       await showAccount();
       await refreshQuota();
+
     } catch (e) {
       el('neonAccount').textContent = e.message;
     }
@@ -168,6 +175,7 @@ el('neonPay').onclick = async () => {
     el('neonPaymentInfo').textContent =
       `Request submitted (${r.status}). ` +
       'Admin must verify payment before points are added.';
+
   } catch (e) {
     el('neonPaymentInfo').textContent = e.message;
   }
@@ -189,7 +197,8 @@ window.neonAuthorize = async file => {
   const mode = el('neonMode').value;
 
   const requestId = crypto.randomUUID();
-localStorage.setItem(pendingKey, requestId);
+
+  localStorage.setItem(pendingKey, requestId);
 
   const r = await api('usage', 'POST', {
     requestId,
@@ -206,6 +215,7 @@ localStorage.setItem(pendingKey, requestId);
     el('quotaStatus').textContent = r.unlimited
       ? 'Free: unlimited'
       : `Free remaining: ${r.remaining}/${r.limit}`;
+
   } else if (Number.isFinite(r.remainingPoints)) {
     el('quotaStatus').textContent =
       `Points remaining: ${r.remainingPoints}`;
@@ -218,7 +228,11 @@ localStorage.setItem(pendingKey, requestId);
 
 // Notify the backend when a compression job ends.
 // This requires api/refund.js to support these parameters.
-window.neonFinish = async (job, success, errorMessage = '') => {
+window.neonFinish = async (
+  job,
+  success,
+  errorMessage = ''
+) => {
   if (!job?.jobId) {
     throw Error('Missing compression job ID');
   }
