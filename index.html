@@ -74,7 +74,6 @@ main{
   letter-spacing:.12em
 }
 
-/* Updated NEON Logo */
 .mark{
   width:56px;
   height:56px;
@@ -88,18 +87,14 @@ main{
   overflow:hidden;
 }
 
-/* LOGO POSITION & SIZE */
 .mark img{
   display:block;
   width:100%;
   height:100%;
   object-fit:contain;
-
-  /* ချိန်ညှိရန် */
   --logo-size:1.35;
   --logo-x:-3px;
   --logo-y:3px;
-
   transform:
     translate(var(--logo-x), var(--logo-y))
     scale(var(--logo-size));
@@ -702,6 +697,111 @@ video{
   line-height:1.65
 }
 
+/* NEW ACCESS MODE CARDS */
+.access-options{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  margin-top:12px
+}
+
+.access-option{
+  position:relative;
+  display:block;
+  width:100%;
+  min-width:0;
+  padding:17px 12px;
+  border:1px solid #ff7c9050;
+  border-radius:15px;
+  background:linear-gradient(145deg,#35111d,#180b11);
+  color:#fff;
+  text-align:left;
+  transition:
+    transform .22s ease,
+    border-color .25s ease,
+    background .25s ease,
+    box-shadow .25s ease;
+  overflow:hidden
+}
+
+.access-option:active{
+  transform:scale(.97)
+}
+
+.access-option.active{
+  border-color:#ff536c;
+  background:linear-gradient(145deg,#641629,#270d17);
+  box-shadow:0 0 18px #ff334e30
+}
+
+.access-option .mode-icon{
+  display:block;
+  font-size:25px;
+  margin-bottom:10px
+}
+
+.access-option strong{
+  display:block;
+  font-size:13px;
+  margin-bottom:7px
+}
+
+.access-option small{
+  display:block;
+  color:#d8b8c0;
+  font-size:10px;
+  line-height:1.5
+}
+
+.access-option:focus-visible{
+  outline:2px solid #ff879a;
+  outline-offset:3px
+}
+
+/* Slide-down details */
+.mode-details{
+  display:grid;
+  grid-template-rows:0fr;
+  opacity:0;
+  transform:translateY(-10px);
+  transition:
+    grid-template-rows .38s ease,
+    opacity .3s ease,
+    transform .38s ease;
+  pointer-events:none
+}
+
+.mode-details.open{
+  grid-template-rows:1fr;
+  opacity:1;
+  transform:translateY(0);
+  pointer-events:auto
+}
+
+.mode-details-inner{
+  overflow:hidden;
+  min-height:0
+}
+
+.mode-details-content{
+  margin-top:13px;
+  padding:14px;
+  border:1px solid #ff7c9045;
+  border-radius:13px;
+  background:#10070a90
+}
+
+.mode-details-content p{
+  color:#f2c5d0;
+  font-size:12px;
+  line-height:1.7;
+  margin:0
+}
+
+.mode-details-content strong{
+  color:#ff9eae
+}
+
 .pay-requests{
   font-size:12px;
   line-height:1.8;
@@ -713,29 +813,15 @@ video{
   padding:8px 0
 }
 
-.access-label{
-  display:block;
-  margin-top:12px;
-  color:#eed5dc;
-  font-size:12px
-}
-
-.access-select{
-  display:block;
-  width:100%;
-  margin-top:8px;
-  padding:12px;
-  background:#230c15;
-  color:white;
-  border:1px solid #ffffff44;
-  border-radius:10px
-}
-
 @media(max-width:500px){
   .top{flex-wrap:wrap}
   .brand{font-size:12px}
   .unlimited-modal{padding:20px 14px}
   .modal-section{padding:13px}
+}
+
+@media(max-width:380px){
+  .access-options{grid-template-columns:1fr}
 }
 
 @media(prefers-reduced-motion:reduce){
@@ -1100,7 +1186,7 @@ video{
   </div>
 </div>
 
-<!-- GET UNLIMITED modal: account + points + payment -->
+<!-- GET UNLIMITED modal -->
 <div class="overlay hidden" id="unlimitedModal"
   role="dialog" aria-modal="true" aria-labelledby="unlimitedTitle">
 
@@ -1136,16 +1222,62 @@ video{
       </div>
     </div>
 
+    <!-- ACCESS MODE: animated cards -->
     <div class="modal-section">
       <h3>ACCESS MODE</h3>
-      <label class="access-label" for="neonMode">
-        Choose how to process your video
-      </label>
 
-      <select id="neonMode" class="access-select">
-        <option value="free">Free daily quota</option>
-        <option value="points">Use paid points</option>
-      </select>
+      <p class="pay-help">
+        Choose how to process your video.
+      </p>
+
+      <div class="access-options">
+
+        <button class="access-option active"
+          id="freeModeBtn" type="button"
+          aria-pressed="true">
+
+          <span class="mode-icon">🆓</span>
+          <strong>DAILY LIMIT</strong>
+          <small>Use your daily free quota.</small>
+        </button>
+
+        <button class="access-option"
+          id="pointsModeBtn" type="button"
+          aria-pressed="false">
+
+          <span class="mode-icon">💎</span>
+          <strong>PAID POINTS</strong>
+          <small>Use points to process videos.</small>
+        </button>
+
+      </div>
+
+      <div class="mode-details open" id="freeModeDetails">
+        <div class="mode-details-inner">
+          <div class="mode-details-content">
+            <p>
+              🆓 <strong>FREE DAILY QUOTA</strong><br>
+              Use your available daily processing limit.
+              Your remaining quota is shown on the main screen.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="mode-details" id="pointsModeDetails">
+        <div class="mode-details-inner">
+          <div class="mode-details-content">
+            <p>
+              💎 <strong>USE PAID POINTS</strong><br>
+              Processing costs are deducted from your points balance.
+              Purchase points below if your balance is insufficient.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Keep the original ID and value for src/access.js -->
+      <input type="hidden" id="neonMode" value="free">
     </div>
 
     <div class="modal-section">
@@ -1188,6 +1320,38 @@ video{
   const welcome = document.getElementById('welcome');
   const continueButton = document.getElementById('continue');
 
+  /* ACCESS MODE SELECTION */
+  const freeModeBtn = document.getElementById('freeModeBtn');
+  const pointsModeBtn = document.getElementById('pointsModeBtn');
+
+  const freeModeDetails = document.getElementById('freeModeDetails');
+  const pointsModeDetails = document.getElementById('pointsModeDetails');
+
+  const neonMode = document.getElementById('neonMode');
+
+  function selectAccessMode(mode) {
+    const isFree = mode === 'free';
+
+    neonMode.value = mode;
+
+    freeModeBtn.classList.toggle('active', isFree);
+    pointsModeBtn.classList.toggle('active', !isFree);
+
+    freeModeBtn.setAttribute('aria-pressed', String(isFree));
+    pointsModeBtn.setAttribute('aria-pressed', String(!isFree));
+
+    freeModeDetails.classList.toggle('open', isFree);
+    pointsModeDetails.classList.toggle('open', !isFree);
+  }
+
+  freeModeBtn.addEventListener('click', () => {
+    selectAccessMode('free');
+  });
+
+  pointsModeBtn.addEventListener('click', () => {
+    selectAccessMode('points');
+  });
+
   function openUnlimited() {
     unlimitedModal.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
@@ -1200,10 +1364,8 @@ video{
 
   getUnlimited.addEventListener('click', openUnlimited);
 
-  // ❌ ခလုတ်ကိုနှိပ်မှသာ GET UNLIMITED modal ပိတ်မည်။
   closeUnlimited.addEventListener('click', closeUnlimitedModal);
 
-  // Backdrop ကိုနှိပ်ခြင်းဖြင့် modal မပိတ်စေရန်
   unlimitedModal.addEventListener('click', event => {
     if (event.target === unlimitedModal) {
       event.preventDefault();
@@ -1211,7 +1373,6 @@ video{
     }
   });
 
-  // Escape နှိပ်ခြင်းဖြင့် modal မပိတ်စေရန်
   document.addEventListener('keydown', event => {
     if (
       event.key === 'Escape' &&
@@ -1235,7 +1396,7 @@ video{
 
 <!-- Video processing and Thadingyut effects -->
 <script type="module">
-// Load the processing engine only when the user starts processing.
+
 let optimizeVideoPromise = null;
 
 async function getOptimizeVideo() {
@@ -1400,13 +1561,10 @@ $('start').addEventListener('click', async () => {
     return;
   }
 
-  // Lock immediately to prevent duplicate authorization requests.
   busy = true;
   updateStart();
 
   let job = null;
-
-  // Track video processing separately from backend confirmation.
   let processingSucceeded = false;
   let completionConfirmed = false;
 
@@ -1420,8 +1578,6 @@ $('start').addEventListener('click', async () => {
       );
     }
 
-    // Show the processing screen immediately. Do not wait for the
-    // network authorization request before changing pages.
     progress = 0;
     $('processingName').textContent = file.name;
     $('percentage').textContent = '0%';
@@ -1429,7 +1585,6 @@ $('start').addEventListener('click', async () => {
     $('cancel').disabled = true;
     page(1);
 
-    // Authorize in the background of the visible processing screen.
     job = await window.neonAuthorize(file);
 
     if (!job || !job.jobId) {
@@ -1450,8 +1605,6 @@ $('start').addEventListener('click', async () => {
       throw new Error('Video processing returned no output.');
     }
 
-    // Processing has succeeded. Do not refund merely because
-    // the backend success-confirmation request later fails.
     processingSucceeded = true;
 
     if (outputUrl) {
@@ -1464,7 +1617,6 @@ $('start').addEventListener('click', async () => {
 
     $('completePreview').src = outputUrl;
 
-    // Confirm successful processing with the backend.
     try {
       await window.neonFinish(job, true);
       completionConfirmed = true;
@@ -1480,15 +1632,12 @@ $('start').addEventListener('click', async () => {
       );
     }
 
-    // Show the result even if the confirmation request failed.
     page(2);
 
   } catch (err) {
     const message =
       err instanceof Error ? err.message : String(err);
 
-    // Only request a refund when video processing itself failed.
-    // Never send a failed refund report after processing succeeded.
     if (job?.jobId && !processingSucceeded) {
       try {
         await window.neonFinish(job, false, message);
@@ -1574,7 +1723,6 @@ const reduced = window.matchMedia(
 ).matches;
 
 function resize() {
-  // Cap pixel density to reduce canvas work on high-resolution phones.
   const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
 
   canvas.width = Math.round(innerWidth * ratio);
