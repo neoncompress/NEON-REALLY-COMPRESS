@@ -1,4 +1,5 @@
 import { db, auth, settings, handler, method, fail } from '../lib/core.js';
+import { sendAdminPaymentNotification } from '../lib/push.js';
 
 export default async function (req, res) {
   if (!method(req, res, ['GET', 'POST'])) return;
@@ -102,6 +103,19 @@ export default async function (req, res) {
         status: 'pending',
         createdAt: new Date()
       });
+
+      // Notify subscribed admin devices. Delivery failures must never undo
+      // or misreport a successfully stored payment request.
+      try {
+        await sendAdminPaymentNotification({
+          id: String(result.insertedId),
+          points: pkg.points,
+          ks: pkg.ks,
+          method: payMethod
+        });
+      } catch (pushError) {
+        console.error('Admin notification error:', pushError);
+      }
 
       return res.status(201).json({
         id: String(result.insertedId),
