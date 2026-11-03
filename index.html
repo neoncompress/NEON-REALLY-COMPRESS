@@ -1165,6 +1165,28 @@ video{
 @media(prefers-reduced-motion:reduce){
   #sky,.lantern-sky{display:none}
 }
+
+/* Account center / Get Point navigation */
+.account-center-subtitle{ text-align:center!important; width:100%; }
+.get-point-entry{
+  width:100%; margin:18px 0 4px; padding:17px 18px;
+  display:flex; align-items:center; justify-content:space-between; gap:14px;
+  border:1px solid #ff536c99; border-radius:16px;
+  background:linear-gradient(110deg,#35101d,#170910 65%,#2a0d18);
+  color:#fff; font-size:15px; font-weight:950; letter-spacing:.12em;
+  box-shadow:0 8px 24px #0006, inset 0 0 18px #ff334e18;
+  cursor:pointer; text-align:left;
+}
+.get-point-entry[hidden], #getPointPage[hidden]{display:none!important}
+.get-point-entry-arrow{font-size:25px;color:#ff8195;transition:transform .2s ease}
+.get-point-entry:active .get-point-entry-arrow{transform:translateX(5px)}
+.get-point-back{
+  width:100%; margin:4px 0 14px; padding:12px 14px;
+  border:1px solid #ff7c906e; border-radius:12px;
+  background:#240d16; color:#ffb7c3; font-size:11px;
+  font-weight:900; letter-spacing:.08em; text-align:left;
+}
+
 </style>
 </head>
 
@@ -1364,8 +1386,9 @@ video{
 
     <div class="eyebrow">NEON COMPRESS PREMIUM</div>
     <h1 class="hello" id="unlimitedTitle">GET UNLIMITED</h1>
-    <h2>Account &amp; Points Center</h2>
+    <h2 class="account-center-subtitle">Account and Point Center</h2>
 
+    <div id="accountCenterPage">
     <div class="modal-section">
       <h3>ACCOUNT</h3>
 
@@ -1386,7 +1409,7 @@ video{
         </div>
 
         <p id="neonAccount" class="account-status">Not logged in</p>
-        <a id="adminDashboardLink" href="/admin/" style="color:#ff9aaa;display:none" hidden>Admin dashboard</a>
+        <a href="/admin/" style="color:#ff9aaa">Admin dashboard</a>
       </div>
     </div>
 
@@ -1448,9 +1471,18 @@ video{
       <input type="hidden" id="neonMode" value="free">
     </div>
 
+      <button class="get-point-entry" id="getPointEntry" type="button" hidden>
+        <span class="get-point-entry-copy">GET POINT</span>
+        <span class="get-point-entry-arrow" aria-hidden="true">➜</span>
+      </button>
+    </div>
+
+    <div id="getPointPage" hidden>
+      <button class="get-point-back" id="getPointBack" type="button">← BACK TO ACCOUNT CENTER</button>
+
     <!-- BUY POINTS: NEON CUSTOM DROPDOWNS -->
     <div class="modal-section">
-      <h3>BUY POINTS</h3>
+      <h3>GET POINT</h3>
 
       <div class="pay-grid">
 
@@ -1526,6 +1558,7 @@ video{
 
       </div>
     </div>
+    </div><!-- /getPointPage -->
   </div>
 </div>
 
@@ -1539,6 +1572,24 @@ video{
   const closeUnlimited = document.getElementById('closeUnlimited');
   const welcome = document.getElementById('welcome');
   const continueButton = document.getElementById('continue');
+  const accountCenterPage = document.getElementById('accountCenterPage');
+  const getPointPage = document.getElementById('getPointPage');
+  const getPointEntry = document.getElementById('getPointEntry');
+  const getPointBack = document.getElementById('getPointBack');
+
+  function showAccountCenter() {
+    accountCenterPage.hidden = false;
+    getPointPage.hidden = true;
+  }
+
+  getPointEntry.addEventListener('click', () => {
+    if (getPointEntry.hidden) return;
+    accountCenterPage.hidden = true;
+    getPointPage.hidden = false;
+    unlimitedModal.querySelector('.unlimited-modal')?.scrollTo({top: 0, behavior: 'smooth'});
+  });
+
+  getPointBack.addEventListener('click', showAccountCenter);
 
   /* ACCESS MODE SELECTION */
   const freeModeBtn = document.getElementById('freeModeBtn');
@@ -1573,6 +1624,7 @@ video{
   });
 
   function openUnlimited() {
+    showAccountCenter();
     unlimitedModal.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
   }
