@@ -78,7 +78,7 @@ async function refresh() {
 
         o.value = p.points;
         o.textContent =
-          `${p.points} points — ${p.ks.toLocaleString()} Ks`;
+          `${p.points} points â€” ${p.ks.toLocaleString()} Ks`;
 
         return o;
       })
@@ -110,10 +110,19 @@ async function refresh() {
 }
 
 async function showAccount() {
+  const adminLink = el('adminDashboardLink');
+
+  // The dashboard link is visible only to an authenticated admin account.
+  if (adminLink) {
+    adminLink.hidden = true;
+    adminLink.style.display = 'none';
+  }
+
+  const pointBadge = el('mainPointBalance');
+
   if (!token()) {
     el('neonAccount').textContent = 'Not logged in';
-    const entry = el('getPointEntry');
-    if (entry) entry.hidden = true;
+    if (pointBadge) pointBadge.hidden = true;
     return;
   }
 
@@ -121,16 +130,64 @@ async function showAccount() {
     const u = await api('auth');
 
     el('neonAccount').textContent =
-      `${u.email} • ${u.points} points`;
-    const entry = el('getPointEntry');
-    if (entry) entry.hidden = false;
+      `${u.email} â€¢ ${u.points} points`;
+
+    if (pointBadge) {
+      const points = Number(u.points || 0);
+      pointBadge.textContent =
+        `ðŸ’Ž ${points.toLocaleString()} POINTS`;
+      pointBadge.hidden = false;
+    }
+
+    if (adminLink && u.role === 'admin') {
+      adminLink.hidden = false;
+      adminLink.style.display = 'inline-block';
+    }
 
   } catch {
     localStorage.removeItem(key);
     el('neonAccount').textContent = 'Please log in again';
-    const entry = el('getPointEntry');
-    if (entry) entry.hidden = true;
+    if (pointBadge) pointBadge.hidden = true;
   }
+}
+
+// GET POINT page navigation. The entry remains visible to guests;
+// opening it requires a valid logged-in account.
+const getPointEntry = el('getPointEntry');
+const getPointPage = el('getPointPage');
+const unlimitedHome = el('unlimitedHome');
+const backFromGetPoint = el('backFromGetPoint');
+
+if (getPointEntry && getPointPage && unlimitedHome) {
+  getPointEntry.addEventListener('click', async () => {
+    if (!token()) {
+      el('neonAccount').textContent =
+        'Login required â€” please log in to get points.';
+      return;
+    }
+
+    try {
+      await api('auth');
+      unlimitedHome.classList.add('hidden');
+      getPointEntry.parentElement.classList.add('hidden');
+      getPointPage.classList.remove('hidden');
+      el('neonPaymentInfo').textContent = '';
+    } catch {
+      localStorage.removeItem(key);
+      el('neonAccount').textContent =
+        'Login required â€” please log in again to get points.';
+      const pointBadge = el('mainPointBalance');
+      if (pointBadge) pointBadge.hidden = true;
+    }
+  });
+}
+
+if (backFromGetPoint && getPointPage && unlimitedHome) {
+  backFromGetPoint.addEventListener('click', () => {
+    getPointPage.classList.add('hidden');
+    unlimitedHome.classList.remove('hidden');
+    getPointEntry.parentElement.classList.remove('hidden');
+  });
 }
 
 // Register and login.
@@ -160,8 +217,6 @@ for (const action of ['register', 'login']) {
 // Logout.
 el('neonLogout').onclick = () => {
   localStorage.removeItem(key);
-  const entry = el('getPointEntry');
-  if (entry) entry.hidden = true;
   showAccount();
 };
 
