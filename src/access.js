@@ -110,16 +110,10 @@ async function refresh() {
 }
 
 async function showAccount() {
-  const adminLink = el('adminDashboardLink');
-
-  // The dashboard link is visible only to an authenticated admin account.
-  if (adminLink) {
-    adminLink.hidden = true;
-    adminLink.style.display = 'none';
-  }
-
   if (!token()) {
     el('neonAccount').textContent = 'Not logged in';
+    const entry = el('getPointEntry');
+    if (entry) entry.hidden = true;
     return;
   }
 
@@ -128,15 +122,14 @@ async function showAccount() {
 
     el('neonAccount').textContent =
       `${u.email} • ${u.points} points`;
-
-    if (adminLink && u.role === 'admin') {
-      adminLink.hidden = false;
-      adminLink.style.display = 'inline-block';
-    }
+    const entry = el('getPointEntry');
+    if (entry) entry.hidden = false;
 
   } catch {
     localStorage.removeItem(key);
     el('neonAccount').textContent = 'Please log in again';
+    const entry = el('getPointEntry');
+    if (entry) entry.hidden = true;
   }
 }
 
@@ -167,6 +160,8 @@ for (const action of ['register', 'login']) {
 // Logout.
 el('neonLogout').onclick = () => {
   localStorage.removeItem(key);
+  const entry = el('getPointEntry');
+  if (entry) entry.hidden = true;
   showAccount();
 };
 
