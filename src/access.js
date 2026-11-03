@@ -78,7 +78,7 @@ async function refresh() {
 
         o.value = p.points;
         o.textContent =
-          `${p.points} points â€” ${p.ks.toLocaleString()} Ks`;
+          `${p.points} points — ${p.ks.toLocaleString()} Ks`;
 
         return o;
       })
@@ -130,12 +130,12 @@ async function showAccount() {
     const u = await api('auth');
 
     el('neonAccount').textContent =
-      `${u.email} â€¢ ${u.points} points`;
+      `${u.email} • ${u.points} points`;
 
     if (pointBadge) {
       const points = Number(u.points || 0);
       pointBadge.textContent =
-        `ðŸ’Ž ${points.toLocaleString()} POINTS`;
+        `${points.toLocaleString()} POINTS LEFT`;
       pointBadge.hidden = false;
     }
 
@@ -162,7 +162,7 @@ if (getPointEntry && getPointPage && unlimitedHome) {
   getPointEntry.addEventListener('click', async () => {
     if (!token()) {
       el('neonAccount').textContent =
-        'Login required â€” please log in to get points.';
+        'Login required — please log in to get points.';
       return;
     }
 
@@ -175,7 +175,7 @@ if (getPointEntry && getPointPage && unlimitedHome) {
     } catch {
       localStorage.removeItem(key);
       el('neonAccount').textContent =
-        'Login required â€” please log in again to get points.';
+        'Login required — please log in again to get points.';
       const pointBadge = el('mainPointBalance');
       if (pointBadge) pointBadge.hidden = true;
     }
@@ -187,6 +187,19 @@ if (backFromGetPoint && getPointPage && unlimitedHome) {
     getPointPage.classList.add('hidden');
     unlimitedHome.classList.remove('hidden');
     getPointEntry.parentElement.classList.remove('hidden');
+  });
+}
+
+// Show / hide the account password.
+const passwordInput = el('neonPassword');
+const passwordToggle = el('toggleNeonPassword');
+if (passwordInput && passwordToggle) {
+  passwordToggle.addEventListener('click', () => {
+    const show = passwordInput.type === 'password';
+    passwordInput.type = show ? 'text' : 'password';
+    passwordToggle.setAttribute('aria-pressed', String(show));
+    passwordToggle.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    passwordToggle.title = show ? 'Hide password' : 'Show password';
   });
 }
 
