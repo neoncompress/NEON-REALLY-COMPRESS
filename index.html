@@ -212,6 +212,58 @@ main{
   margin-bottom:15px
 }
 
+/* Account / points navigation */
+.start-card-heading{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
+.point-balance-badge{
+  flex:0 0 auto;
+  padding:7px 11px;
+  border:1px solid #ff8298a8;
+  border-radius:999px;
+  background:linear-gradient(110deg,#ff334e30,#8d1b493d);
+  color:#ffd5dd;
+  font-size:11px;
+  font-weight:950;
+  letter-spacing:.04em;
+  box-shadow:0 0 15px #ff334e24;
+}
+.account-point-center-title{
+  text-align:center !important;
+  width:100%;
+  margin-left:auto !important;
+  margin-right:auto !important;
+}
+.get-point-entry-card{
+  padding:10px !important;
+}
+.get-point-entry{
+  width:100%;
+  min-height:58px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  padding:15px 18px;
+  border:1px solid #ff8298a8;
+  border-radius:15px;
+  color:#fff;
+  background:linear-gradient(110deg,#ff334e35,#8d1b4950);
+  font-weight:950;
+  letter-spacing:.1em;
+  text-align:left;
+  box-shadow:0 8px 24px #ff334e1c;
+}
+.get-point-arrow{font-size:23px;color:#ff9aaa}
+.get-point-back{margin:0 0 14px}
+#getPointPage .modal-section{margin-top:0}
+@media(max-width:420px){
+  .point-balance-badge{font-size:10px;padding:6px 8px}
+}
+
 .label{
   color:#e9c8d0;
   font-size:11px;
@@ -1165,28 +1217,6 @@ video{
 @media(prefers-reduced-motion:reduce){
   #sky,.lantern-sky{display:none}
 }
-
-/* Account center / Get Point navigation */
-.account-center-subtitle{ text-align:center!important; width:100%; }
-.get-point-entry{
-  width:100%; margin:18px 0 4px; padding:17px 18px;
-  display:flex; align-items:center; justify-content:space-between; gap:14px;
-  border:1px solid #ff536c99; border-radius:16px;
-  background:linear-gradient(110deg,#35101d,#170910 65%,#2a0d18);
-  color:#fff; font-size:15px; font-weight:950; letter-spacing:.12em;
-  box-shadow:0 8px 24px #0006, inset 0 0 18px #ff334e18;
-  cursor:pointer; text-align:left;
-}
-.get-point-entry[hidden], #getPointPage[hidden]{display:none!important}
-.get-point-entry-arrow{font-size:25px;color:#ff8195;transition:transform .2s ease}
-.get-point-entry:active .get-point-entry-arrow{transform:translateX(5px)}
-.get-point-back{
-  width:100%; margin:4px 0 14px; padding:12px 14px;
-  border:1px solid #ff7c906e; border-radius:12px;
-  background:#240d16; color:#ffb7c3; font-size:11px;
-  font-weight:900; letter-spacing:.08em; text-align:left;
-}
-
 </style>
 </head>
 
@@ -1233,7 +1263,10 @@ video{
 
 <section id="uploadScreen" class="screen">
   <div class="card">
-    <div class="label">01 / GET STARTED</div>
+    <div class="start-card-heading">
+      <div class="label">01 / GET STARTED</div>
+      <div id="mainPointBalance" class="point-balance-badge" hidden>💎 0 POINTS</div>
+    </div>
     <h2>Choose your video</h2>
     <p class="sub">Select an MP4 video to optimize without re-encoding.</p>
 
@@ -1386,9 +1419,9 @@ video{
 
     <div class="eyebrow">NEON COMPRESS PREMIUM</div>
     <h1 class="hello" id="unlimitedTitle">GET UNLIMITED</h1>
-    <h2 class="account-center-subtitle">Account and Point Center</h2>
+    <h2 class="account-point-center-title">Account and Point Center</h2>
 
-    <div id="accountCenterPage">
+    <div id="unlimitedHome">
     <div class="modal-section">
       <h3>ACCOUNT</h3>
 
@@ -1409,7 +1442,7 @@ video{
         </div>
 
         <p id="neonAccount" class="account-status">Not logged in</p>
-        <a href="/admin/" style="color:#ff9aaa">Admin dashboard</a>
+        <a id="adminDashboardLink" href="/admin/" style="color:#ff9aaa;display:none" hidden>Admin dashboard</a>
       </div>
     </div>
 
@@ -1471,18 +1504,23 @@ video{
       <input type="hidden" id="neonMode" value="free">
     </div>
 
-      <button class="get-point-entry" id="getPointEntry" type="button" hidden>
-        <span class="get-point-entry-copy">GET POINT</span>
-        <span class="get-point-entry-arrow" aria-hidden="true">➜</span>
+    </div><!-- /unlimitedHome -->
+
+    <div class="modal-section get-point-entry-card">
+      <button id="getPointEntry" class="get-point-entry" type="button">
+        <span>GET POINT</span>
+        <span class="get-point-arrow" aria-hidden="true">➜</span>
       </button>
     </div>
 
-    <div id="getPointPage" hidden>
-      <button class="get-point-back" id="getPointBack" type="button">← BACK TO ACCOUNT CENTER</button>
+    <div id="getPointPage" class="hidden">
+      <button id="backFromGetPoint" class="mini get-point-back" type="button">
+        ← BACK
+      </button>
 
     <!-- BUY POINTS: NEON CUSTOM DROPDOWNS -->
     <div class="modal-section">
-      <h3>GET POINT</h3>
+      <h3>BUY POINTS</h3>
 
       <div class="pay-grid">
 
@@ -1572,24 +1610,6 @@ video{
   const closeUnlimited = document.getElementById('closeUnlimited');
   const welcome = document.getElementById('welcome');
   const continueButton = document.getElementById('continue');
-  const accountCenterPage = document.getElementById('accountCenterPage');
-  const getPointPage = document.getElementById('getPointPage');
-  const getPointEntry = document.getElementById('getPointEntry');
-  const getPointBack = document.getElementById('getPointBack');
-
-  function showAccountCenter() {
-    accountCenterPage.hidden = false;
-    getPointPage.hidden = true;
-  }
-
-  getPointEntry.addEventListener('click', () => {
-    if (getPointEntry.hidden) return;
-    accountCenterPage.hidden = true;
-    getPointPage.hidden = false;
-    unlimitedModal.querySelector('.unlimited-modal')?.scrollTo({top: 0, behavior: 'smooth'});
-  });
-
-  getPointBack.addEventListener('click', showAccountCenter);
 
   /* ACCESS MODE SELECTION */
   const freeModeBtn = document.getElementById('freeModeBtn');
@@ -1624,7 +1644,6 @@ video{
   });
 
   function openUnlimited() {
-    showAccountCenter();
     unlimitedModal.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
   }
