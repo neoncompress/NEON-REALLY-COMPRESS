@@ -236,6 +236,8 @@ main{
   width:100%;
   margin-left:auto !important;
   margin-right:auto !important;
+  position:relative;
+  left:-8px;
 }
 .get-point-entry-card{
   padding:10px !important;
@@ -718,6 +720,18 @@ video{
   border-radius:12px;
   font-size:14px
 }
+
+.password-field{position:relative;width:100%;}
+.password-field input{padding-right:52px;}
+.password-toggle{
+  position:absolute;right:7px;top:50%;transform:translateY(-50%);
+  width:38px;height:38px;display:grid;place-items:center;
+  border:0;border-radius:9px;background:transparent;color:#ffb7c4;
+  cursor:pointer;padding:7px;
+}
+.password-toggle svg{width:21px;height:21px;fill:none;stroke:currentColor;
+  stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+.password-toggle:focus-visible{outline:2px solid #ff8298;outline-offset:2px;}
 
 .account-form label{
   text-align:left;
@@ -1265,7 +1279,7 @@ video{
   <div class="card">
     <div class="start-card-heading">
       <div class="label">01 / GET STARTED</div>
-      <div id="mainPointBalance" class="point-balance-badge" hidden>💎 0 POINTS</div>
+      <div id="mainPointBalance" class="point-balance-badge" hidden>100 POINTS LEFT</div>
     </div>
     <h2>Choose your video</h2>
     <p class="sub">Select an MP4 video to optimize without re-encoding.</p>
@@ -1431,9 +1445,19 @@ video{
           placeholder="Email" autocomplete="email">
 
         <label for="neonPassword">Password</label>
-        <input id="neonPassword" type="password"
-          placeholder="Password (10+ characters)"
-          autocomplete="current-password">
+        <div class="password-field">
+          <input id="neonPassword" type="password"
+            placeholder="Password (10+ characters)"
+            autocomplete="current-password">
+          <button class="password-toggle" id="toggleNeonPassword"
+            type="button" aria-label="Show password"
+            aria-pressed="false" title="Show password">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </div>
 
         <div class="row">
           <button class="mini" id="neonRegister" type="button">REGISTER</button>
